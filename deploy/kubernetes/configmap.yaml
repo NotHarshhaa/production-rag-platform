@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-api-config
+  namespace: rag-platform
+data:
+  APP_ENV: "production"
+  LOG_JSON: "true"
+  VECTOR_STORE: "qdrant"
+  QDRANT_URL: "http://qdrant.rag-platform.svc.cluster.local:6333"
+  QDRANT_COLLECTION: "rag_chunks"
+  DATABASE_URL: "postgresql://rag:rag@postgres.rag-platform.svc.cluster.local:5432/ragdb"
+  EMBEDDING_PROVIDER: "hashing"
+  AUTH_ENABLED: "true"
+  INGESTION_MODE: "background"
+  METRICS_ENABLED: "true"

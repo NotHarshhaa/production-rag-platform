@@ -25,8 +25,8 @@ so tenant data stays isolated.
 """ * 3
 
 
-def make_settings(tmp_path) -> Settings:
-    return Settings(
+def make_settings(tmp_path, **overrides) -> Settings:
+    values = dict(
         database_url=f"sqlite:///{tmp_path / 'rag-test.db'}",
         vector_store="inmemory",
         embedding_provider="hashing",
@@ -39,6 +39,8 @@ def make_settings(tmp_path) -> Settings:
         metrics_enabled=True,
         log_level="WARNING",
     )
+    values.update(overrides)
+    return Settings(**values)
 
 
 @pytest.fixture()
@@ -68,4 +70,34 @@ def upload_document(client: TestClient, filename: str, content: str):
     return client.post(
         "/documents/upload",
         files={"file": (filename, content.encode("utf-8"), "text/plain")},
+    )
+
+
+@pytest.fixture()
+def auth_client(tmp_path):
+    """App with API-key auth enabled: two tenants sharing one corpus config."""
+
+    settings = make_settings(
+        tmp_path,
+        auth_enabled=True,
+        api_keys="sk-acme:acme,sk-globex:globex",
+    )
+    app = create_app(settings)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
+def background_client(tmp_path):
+    settings = make_settings(tmp_path, ingestion_mode="background")
+    app = create_app(settings)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def upload_as(client: TestClient, filename: str, content: str, headers: dict | None = None):
+    return client.post(
+        "/documents/upload",
+        files={"file": (filename, content.encode("utf-8"), "text/plain")},
+        headers=headers or {},
     )

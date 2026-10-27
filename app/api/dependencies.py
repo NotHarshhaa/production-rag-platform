@@ -7,6 +7,7 @@ from fastapi import Request
 from app.core.config import Settings, get_settings
 from app.generation.answer import AnswerService, build_llm_provider
 from app.ingestion.pipeline import IngestionPipeline
+from app.ingestion.worker import BackgroundIndexer
 from app.retrieval.embeddings import build_embedding_provider
 from app.retrieval.hybrid_search import HybridRetriever
 from app.retrieval.reranker import build_reranker
@@ -25,10 +26,15 @@ class ServiceContainer:
     retriever: HybridRetriever
     reranker: object
     answer_service: AnswerService
+    indexer: BackgroundIndexer | None = None
+
+    @property
+    def background_ingestion(self) -> bool:
+        return self.indexer is not None
 
     def shutdown(self) -> None:
-        # Keep a hook for releasing connections; engines dispose lazily today.
-        pass
+        if self.indexer is not None:
+            self.indexer.shutdown()
 
 
 def build_container(settings: Settings | None = None) -> ServiceContainer:
@@ -49,6 +55,11 @@ def build_container(settings: Settings | None = None) -> ServiceContainer:
     llm = build_llm_provider(settings)
     pipeline = IngestionPipeline(repository, embeddings, vector_store, settings)
     answer_service = AnswerService(retriever, reranker, llm, settings)
+    indexer = (
+        BackgroundIndexer(pipeline, settings.ingestion_workers)
+        if settings.ingestion_mode == "background"
+        else None
+    )
 
     return ServiceContainer(
         settings=settings,
@@ -57,6 +68,7 @@ def build_container(settings: Settings | None = None) -> ServiceContainer:
         retriever=retriever,
         reranker=reranker,
         answer_service=answer_service,
+        indexer=indexer,
     )
 
 

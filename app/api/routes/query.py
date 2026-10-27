@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from app.api.auth import Tenant
 from app.api.dependencies import ServiceContainer, get_container
 from app.api.schemas import (
     CitationOut,
@@ -22,19 +23,21 @@ router = APIRouter(tags=["query"])
 _Container = Annotated[ServiceContainer, Depends(get_container)]
 
 
-def _build_filter(document_ids: list[str] | None) -> dict | None:
-    if not document_ids:
-        return None
-    return {"document_id": document_ids}
+def _build_filter(tenant: str, document_ids: list[str] | None) -> dict:
+    # Tenant scoping is enforced server-side, never taken from the request.
+    metadata_filter: dict = {"tenant_id": tenant}
+    if document_ids:
+        metadata_filter["document_id"] = document_ids
+    return metadata_filter
 
 
 @router.post("/query", response_model=QueryResponse)
-def query(request: QueryRequest, container: _Container) -> QueryResponse:
+def query(request: QueryRequest, container: _Container, tenant: Tenant) -> QueryResponse:
     try:
         result = container.answer_service.answer(
             question=request.question,
             top_k=request.top_k,
-            metadata_filter=_build_filter(request.document_ids),
+            metadata_filter=_build_filter(tenant, request.document_ids),
             mode=request.mode,
         )
     except LLMError as exc:
@@ -76,17 +79,21 @@ def query(request: QueryRequest, container: _Container) -> QueryResponse:
             prompt_tokens=result.usage.get("prompt_tokens", 0),
             completion_tokens=result.usage.get("completion_tokens", 0),
             total_tokens=result.usage.get("total_tokens", 0),
+            cost_usd=result.usage.get("cost_usd", 0.0),
             model=result.usage.get("model", ""),
         ),
         insufficient_context=result.insufficient_context,
         prompt_version=result.prompt_version,
         latency_ms=result.total_latency_ms,
+        cached=result.cached,
         metadata={"prompt_version": result.prompt_version},
     )
 
 
 @router.post("/query/stream")
-def query_stream(request: QueryRequest, container: _Container) -> StreamingResponse:
+def query_stream(
+    request: QueryRequest, container: _Container, tenant: Tenant
+) -> StreamingResponse:
     """Server-sent events: retrieval, delta*, then done (or error)."""
 
     def event_stream():
@@ -94,7 +101,7 @@ def query_stream(request: QueryRequest, container: _Container) -> StreamingRespo
             for event in container.answer_service.stream_answer(
                 question=request.question,
                 top_k=request.top_k,
-                metadata_filter=_build_filter(request.document_ids),
+                metadata_filter=_build_filter(tenant, request.document_ids),
                 mode=request.mode,
             ):
                 yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"

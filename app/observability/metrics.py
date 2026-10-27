@@ -58,6 +58,15 @@ LLM_ERRORS = Counter(
     "LLM provider errors.",
     ["provider"],
 )
+LLM_COST = Counter(
+    "rag_llm_cost_usd_total",
+    "Estimated LLM cost based on configured per-1k-token rates.",
+)
+QUERY_CACHE = Counter(
+    "rag_query_cache_total",
+    "Query cache outcomes.",
+    ["result"],
+)
 
 # --- Ingestion -----------------------------------------------------------
 INGESTION_LATENCY = Histogram(

@@ -1,4 +1,9 @@
-"""Ingestion pipeline: persist uploads, extract text, chunk, embed, and index."""
+"""Ingestion pipeline: persist uploads, extract text, chunk, embed, and index.
+
+All operations accept an optional ``tenant_id``; when provided, documents
+outside that tenant are invisible. Vector metadata carries ``tenant_id`` so
+retrieval filtering enforces isolation at query time.
+"""
 
 import hashlib
 import time
@@ -13,6 +18,7 @@ from app.observability.metrics import (
     INGESTION_LATENCY,
 )
 from app.retrieval.vector_store import VectorRecord, VectorStore
+from app.storage.database import DEFAULT_TENANT
 from app.storage.repository import DocumentRepository
 
 logger = get_logger(__name__)
@@ -24,6 +30,10 @@ class IngestionError(RuntimeError):
 
 class DocumentNotFoundError(KeyError):
     """Raised when an operation references an unknown document id."""
+
+
+class DuplicateDocumentError(RuntimeError):
+    """Raised when replacing content would collide with another document."""
 
 
 @dataclass
@@ -47,15 +57,15 @@ class IngestionPipeline:
         self.vector_store = vector_store
         self.settings = settings
 
-    def ingest(self, name: str, data: bytes) -> tuple[str, bool]:
+    def ingest(self, name: str, data: bytes, tenant_id: str = DEFAULT_TENANT) -> tuple[str, bool]:
         """Persist an upload. Returns (document_id, is_duplicate).
 
-        Duplicate detection is content-based: a byte-identical file resolves
-        to the existing document instead of creating a new row.
+        Duplicate detection is content-based and per tenant: a byte-identical
+        file resolves to the existing document instead of creating a new row.
         """
 
         sha256 = hashlib.sha256(data).hexdigest()
-        existing = self.repository.get_by_sha256(sha256)
+        existing = self.repository.get_by_sha256(sha256, tenant_id)
         if existing is not None:
             logger.info(
                 "Duplicate upload detected",
@@ -70,11 +80,51 @@ class IngestionPipeline:
             size_bytes=len(data),
             sha256=sha256,
             content=data,
+            tenant_id=tenant_id,
         )
-        logger.info("Document stored", extra={"document_id": document.id, "file": name})
+        logger.info(
+            "Document stored",
+            extra={"document_id": document.id, "file": name, "tenant": tenant_id},
+        )
         return document.id, False
 
-    def index_document(self, document_id: str) -> int:
+    def replace_document(
+        self,
+        document_id: str,
+        name: str,
+        data: bytes,
+        tenant_id: str = DEFAULT_TENANT,
+    ) -> str:
+        """Replace a document's content and re-index it. Returns the chunk count.
+
+        Raises DuplicateDocumentError when the new content matches a different
+        document in the same tenant (unique constraint on sha256 + tenant).
+        """
+
+        document = self.repository.get(document_id, tenant_id)
+        if document is None:
+            raise DocumentNotFoundError(document_id)
+
+        sha256 = hashlib.sha256(data).hexdigest()
+        conflicting = self.repository.get_by_sha256(sha256, tenant_id)
+        if conflicting is not None and conflicting.id != document_id:
+            raise DuplicateDocumentError(
+                f"Content matches existing document {conflicting.id}"
+            )
+
+        content_type = detect_content_type(name)
+        self.repository.replace_content(
+            document_id,
+            name=name,
+            content_type=content_type,
+            size_bytes=len(data),
+            sha256=sha256,
+            content=data,
+        )
+        logger.info("Document content replaced", extra={"document_id": document_id})
+        return self.index_document(document_id)
+
+    def index_document(self, document_id: str, tenant_id: str | None = None) -> int:
         """Index or re-index a stored document. Returns the chunk count.
 
         Re-indexing is idempotent: existing vectors for the document are
@@ -82,7 +132,7 @@ class IngestionPipeline:
         """
 
         started = time.perf_counter()
-        document = self.repository.get(document_id)
+        document = self.repository.get(document_id, tenant_id)
         if document is None:
             raise DocumentNotFoundError(document_id)
 
@@ -108,6 +158,7 @@ class IngestionPipeline:
                         "document_id": document_id,
                         "document_name": document.name,
                         "content_type": document.content_type,
+                        "tenant_id": document.tenant_id,
                         "page": chunk.page,
                         "text": chunk.text,
                     },
@@ -145,10 +196,10 @@ class IngestionPipeline:
             logger.exception("Indexing failed", extra={"document_id": document_id})
             raise IngestionError(f"Indexing failed: {exc}") from exc
 
-    def delete_document(self, document_id: str) -> None:
+    def delete_document(self, document_id: str, tenant_id: str | None = None) -> None:
         """Remove a document's vectors and metadata row."""
 
-        document = self.repository.get(document_id)
+        document = self.repository.get(document_id, tenant_id)
         if document is None:
             raise DocumentNotFoundError(document_id)
         self.vector_store.delete_document(document_id)

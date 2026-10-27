@@ -33,14 +33,14 @@ relational database.
 
 | Module | Responsibility |
 |---|---|
-| `app/api` | FastAPI routes, request/response schemas, dependency wiring (`ServiceContainer`) |
+| `app/api` | FastAPI routes, request/response schemas, API-key auth (`auth.py`), dependency wiring (`ServiceContainer`) |
 | `app/core` | Settings (pydantic-settings) and structured logging with request IDs |
-| `app/ingestion` | Loaders (PyMuPDF for PDF), paragraph-aware chunking, the ingest/index pipeline |
+| `app/ingestion` | Loaders (PyMuPDF for PDF), paragraph-aware chunking, the ingest/index pipeline, background workers (`worker.py`) |
 | `app/retrieval` | Embedding providers, vector stores, BM25 + hybrid search, reranking |
-| `app/generation` | Grounded prompts, citation parsing, the answer service, LLM providers |
+| `app/generation` | Grounded prompts, citation parsing, the answer service with query cache and cost tracking, LLM providers |
 | `app/evaluation` | JSONL datasets, retrieval/answer metrics, the evaluation runner |
 | `app/observability` | Prometheus metrics and optional OpenTelemetry tracing |
-| `app/storage` | SQLAlchemy engine + `documents` table (SQLite or PostgreSQL) |
+| `app/storage` | SQLAlchemy engine + tenant-scoped `documents` table (SQLite or PostgreSQL) |
 
 `app/api/dependencies.py` builds one `ServiceContainer` per application
 instance (lifespan-managed). Every component is constructed from `Settings`,
@@ -84,6 +84,35 @@ parses `[n]` markers back into chunk citations; if the model cites nothing,
 the top retrieved chunk is attached. With no retrieval results, the service
 returns an explicit "not found" answer instead of calling the model.
 
+**Multi-tenancy via API keys.** When `AUTH_ENABLED=true`, every request
+must present an API key (`X-API-Key` or `Authorization: Bearer`); keys map
+to tenants as `key:tenant` pairs. `documents.tenant_id` scopes rows, and
+retrieval filters by `tenant_id` server-side, so one tenant's documents can
+never surface in another tenant's results. With auth disabled everything
+runs in the default `public` tenant. `/health` and `/metrics` stay open for
+probes and scraping.
+
+**Background ingestion.** With `INGESTION_MODE=background`, index requests
+submit to a small `ThreadPoolExecutor` (`app/ingestion/worker.py`) and
+return 202 immediately; documents move `uploaded -> indexed/failed` and
+clients poll `GET /documents/{id}`. The thread pool shares the process's
+vector store, so the single-worker caveat below applies equally.
+
+**Query cache with corpus invalidation.** `AnswerService` caches answers
+per (tenant, question, top_k, filter, mode) with a TTL. Each entry records
+the vector store revision at insert time; any document index or delete
+bumps that revision and invalidates the cache, so answers never go stale
+after corpus changes. Streaming responses bypass the cache.
+
+**Cost tracking.** Configure `LLM_COST_PROMPT_PER_1K` /
+`LLM_COST_COMPLETION_PER_1K` with your provider's prices; every answer's
+estimated cost is included in the response (`usage.cost_usd`) and aggregated
+in the `rag_llm_cost_usd_total` metric.
+
+**Document update workflow.** `PUT /documents/{id}` replaces a document's
+content (rejecting hash conflicts with 409), resets its state, and re-indexes
+— idempotent like the index endpoint.
+
 **LLM providers.** `StubLLM` (deterministic extractive answers) and
 `OpenAIChatLLM` (any OpenAI-compatible endpoint, with timeouts and retries)
 share the `LLMProvider` interface; `POST /query/stream` uses the same
@@ -93,20 +122,25 @@ interface's `stream` method over SSE.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| POST | `/documents/upload` | Validate + store a document (dedup by SHA-256) |
-| POST | `/documents/{id}/index` | Index or re-index (idempotent, replaces old vectors) |
-| GET | `/documents` | List documents and their status |
+| POST | `/documents/upload` | Validate + store a document (per-tenant dedup by SHA-256; `?auto_index=true` to index immediately) |
+| POST | `/documents/{id}/index` | Index or re-index (idempotent; 202 when background ingestion is on) |
+| PUT | `/documents/{id}` | Replace a document's content and re-index |
+| GET | `/documents` | List documents and their status (own tenant only) |
 | GET/DELETE | `/documents/{id}` | Fetch or delete a document and its vectors |
-| POST | `/query` | Grounded answer + citations + retrieval details |
+| POST | `/query` | Grounded answer + citations + retrieval details (cache-aware) |
 | POST | `/query/stream` | SSE stream: `retrieval`, `delta*`, `done` |
-| GET | `/health` | Component checks (database, vector store) |
-| GET | `/metrics` | Prometheus metrics |
+| GET | `/health` | Component checks (database, vector store) — unauthenticated |
+| GET | `/metrics` | Prometheus metrics — unauthenticated |
+
+All `/documents` and `/query` routes require an API key when
+`AUTH_ENABLED=true`; see `app/api/auth.py` for the header formats.
 
 ## Metrics
 
 - `rag_http_requests_total{method,route,status}`, `..._latency_seconds`, `rag_http_requests_in_progress`
 - `rag_retrieval_latency_seconds`, `rag_retrieved_chunks{mode}`
 - `rag_llm_latency_seconds{provider}`, `rag_llm_tokens_total{type}`, `rag_llm_errors_total`
+- `rag_llm_cost_usd_total` (estimated spend), `rag_query_cache_total{result}` (hit/miss)
 - `rag_ingestion_latency_seconds{operation}`, `rag_documents_indexed_total{result}`
 
 A provisioned Grafana dashboard (`RAG Platform Overview`) ships in
@@ -116,6 +150,6 @@ A provisioned Grafana dashboard (`RAG Platform Overview`) ships in
 
 Uploads are extension-validated and size-capped before the body is read.
 Document text is never logged; logs carry ids, statuses, and timings. The
-prompt treats retrieved content as data, and per-document filters enforce
-tenant isolation at retrieval time. These are the MVP controls — the README
-checklist (auth, retention, per-request authorization) remains open work.
+prompt treats retrieved content as data. Tenant isolation is enforced
+server-side at retrieval time via API-key-mapped tenants. Still open:
+retention policies, per-key quotas, and full RBAC.

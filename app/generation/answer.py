@@ -10,19 +10,21 @@ LLM providers:
 - ``OpenAIChatLLM`` — any OpenAI-compatible chat completions endpoint.
 """
 
+import hashlib
 import json
 import re
+import threading
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from app.core.config import LLM_OPENAI, LLM_STUB, Settings
 from app.core.logging import get_logger
 from app.generation.prompts import PROMPT_VERSION, build_context, build_messages
 from app.ingestion.chunking import estimate_tokens, tokenize
-from app.observability.metrics import LLM_ERRORS, LLM_LATENCY, LLM_TOKENS
+from app.observability.metrics import LLM_COST, LLM_ERRORS, LLM_LATENCY, LLM_TOKENS, QUERY_CACHE
 from app.retrieval.hybrid_search import RetrievedChunk
 from app.retrieval.reranker import Reranker
 
@@ -70,6 +72,64 @@ class AnswerResult:
     usage: dict[str, Any] = field(default_factory=dict)
     prompt_version: str = PROMPT_VERSION
     reranked: bool = False
+    cached: bool = False
+
+
+class QueryCache:
+    """Small TTL cache for answer results, invalidated by corpus changes.
+
+    Entries remember the vector store revision at insert time; any document
+    indexing or deletion bumps the revision and invalidates the whole cache,
+    so answers never go stale after the corpus changes.
+    """
+
+    def __init__(self, ttl_seconds: int, max_entries: int = 256) -> None:
+        self.ttl_seconds = max(0, ttl_seconds)
+        self.max_entries = max_entries
+        self._entries: dict[str, tuple[Any, float, int]] = {}
+        self._lock = threading.Lock()
+
+    @property
+    def enabled(self) -> bool:
+        return self.ttl_seconds > 0
+
+    @staticmethod
+    def make_key(
+        question: str, top_k: int | None, metadata_filter: dict | None, mode: str | None
+    ) -> str:
+        material = json.dumps(
+            {
+                "question": question.strip().lower(),
+                "top_k": top_k,
+                "filter": metadata_filter,
+                "mode": mode,
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha1(material.encode("utf-8")).hexdigest()  # noqa: S324 - not security
+
+    def get(self, key: str, current_revision: int) -> Any | None:
+        if not self.enabled:
+            return None
+        now = time.monotonic()
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return None
+            value, expires_at, revision = entry
+            if expires_at <= now or revision != current_revision:
+                del self._entries[key]
+                return None
+            return value
+
+    def put(self, key: str, value: Any, revision: int) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            if len(self._entries) >= self.max_entries:
+                oldest = min(self._entries, key=lambda k: self._entries[k][1])
+                del self._entries[oldest]
+            self._entries[key] = (value, time.monotonic() + self.ttl_seconds, revision)
 
 
 class LLMProvider(ABC):
@@ -318,6 +378,23 @@ class AnswerService:
         self.reranker = reranker
         self.llm = llm
         self.settings = settings
+        self.cache = QueryCache(settings.query_cache_ttl_seconds)
+
+    def _cache_key(
+        self,
+        question: str,
+        top_k: int | None,
+        metadata_filter: dict[str, Any] | None,
+        mode: str | None,
+    ) -> str:
+        return self.cache.make_key(question, top_k, metadata_filter, mode)
+
+    def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+        cost = (
+            prompt_tokens / 1000 * self.settings.llm_cost_prompt_per_1k
+            + completion_tokens / 1000 * self.settings.llm_cost_completion_per_1k
+        )
+        return round(cost, 6)
 
     def answer(
         self,
@@ -326,6 +403,14 @@ class AnswerService:
         metadata_filter: dict[str, Any] | None = None,
         mode: str | None = None,
     ) -> AnswerResult:
+        revision = self.retriever.vector_store.get_revision()
+        cache_key = self._cache_key(question, top_k, metadata_filter, mode)
+        cached_result = self.cache.get(cache_key, revision)
+        if cached_result is not None:
+            QUERY_CACHE.labels(result="hit").inc()
+            return replace(cached_result, cached=True)
+        QUERY_CACHE.labels(result="miss").inc()
+
         started = time.perf_counter()
         chunks = self.retriever.retrieve(
             question, top_k=top_k, metadata_filter=metadata_filter, mode=mode
@@ -339,7 +424,7 @@ class AnswerService:
 
         if not chunks:
             total_ms = (time.perf_counter() - started) * 1000
-            return AnswerResult(
+            result = AnswerResult(
                 question=question,
                 answer=(
                     "I could not find relevant information in the indexed documents "
@@ -355,10 +440,13 @@ class AnswerService:
                     "prompt_tokens": 0,
                     "completion_tokens": estimate_tokens(question) // 2,
                     "total_tokens": estimate_tokens(question) // 2,
+                    "cost_usd": 0.0,
                     "model": self.llm.model,
                 },
                 reranked=reranked,
             )
+            self.cache.put(cache_key, result, revision)
+            return result
 
         context = build_context(chunks)
         messages = build_messages(question, context)
@@ -376,6 +464,9 @@ class AnswerService:
         LLM_TOKENS.labels(type="prompt").inc(response.prompt_tokens)
         LLM_TOKENS.labels(type="completion").inc(response.completion_tokens)
 
+        cost = self._estimate_cost(response.prompt_tokens, response.completion_tokens)
+        LLM_COST.inc(cost)
+
         citations = parse_citations(response.text, chunks)
         if not citations:
             # The model cited nothing; surface the top chunk so answers always
@@ -392,7 +483,7 @@ class AnswerService:
             ]
 
         total_ms = (time.perf_counter() - started) * 1000
-        return AnswerResult(
+        result = AnswerResult(
             question=question,
             answer=response.text,
             citations=citations,
@@ -405,10 +496,13 @@ class AnswerService:
                 "prompt_tokens": response.prompt_tokens,
                 "completion_tokens": response.completion_tokens,
                 "total_tokens": response.prompt_tokens + response.completion_tokens,
+                "cost_usd": cost,
                 "model": response.model or self.llm.model,
             },
             reranked=reranked,
         )
+        self.cache.put(cache_key, result, revision)
+        return result
 
     def stream_answer(
         self,

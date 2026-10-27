@@ -77,9 +77,27 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     llm_max_retries: int = 2
 
+    # Cost estimation (currency units per 1k tokens; 0 disables tracking)
+    llm_cost_prompt_per_1k: float = 0.0
+    llm_cost_completion_per_1k: float = 0.0
+
     # Uploads
     max_upload_size_mb: int = 25
     allowed_extensions: str = "pdf,txt,md"
+
+    # Authentication and multi-tenancy
+    auth_enabled: bool = False
+    # Comma-separated "key:tenant" pairs; a bare key maps to default_tenant.
+    api_keys: str = ""
+    default_tenant: str = "public"
+
+    # Ingestion: "sync" (blocking) or "background" (thread-pool workers)
+    ingestion_mode: str = "sync"
+    ingestion_workers: int = 2
+
+    # Query cache (seconds; 0 disables). Entries are invalidated whenever
+    # the corpus changes (any document indexed or deleted).
+    query_cache_ttl_seconds: int = 300
 
     # Observability
     log_level: str = "INFO"
@@ -102,6 +120,12 @@ class Settings(BaseSettings):
             )
         if self.max_upload_size_mb < 1:
             raise ValueError("MAX_UPLOAD_SIZE_MB must be at least 1")
+        if self.auth_enabled and not self.api_keys.strip():
+            raise ValueError("AUTH_ENABLED=true requires at least one entry in API_KEYS")
+        if self.ingestion_mode not in ("sync", "background"):
+            raise ValueError("INGESTION_MODE must be 'sync' or 'background'")
+        if self.ingestion_workers < 1:
+            raise ValueError("INGESTION_WORKERS must be at least 1")
         self.log_level = self.log_level.upper()
         return self
 

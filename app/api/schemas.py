@@ -11,6 +11,7 @@ class DocumentOut(BaseModel):
     name: str
     content_type: str
     size_bytes: int
+    tenant_id: str = "public"
     status: Literal["uploaded", "indexed", "failed"]
     num_chunks: int
     error: str | None = None
@@ -58,6 +59,7 @@ class UsageInfo(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    cost_usd: float = 0.0
     model: str
 
 
@@ -69,4 +71,5 @@ class QueryResponse(BaseModel):
     insufficient_context: bool
     prompt_version: str
     latency_ms: float
+    cached: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
