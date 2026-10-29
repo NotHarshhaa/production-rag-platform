@@ -261,6 +261,7 @@ python -m app.evaluation.runner --with-answers
 uvicorn app.main:app --reload
 ```
 
+- Interactive Web UI: <http://localhost:8000>
 - API documentation: <http://localhost:8000/docs>
 - Health endpoint: <http://localhost:8000/health>
 - Metrics: <http://localhost:8000/metrics>

@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.dependencies import build_container
-from app.api.routes import documents, health, query
+from app.api.routes import documents, health, query, ui
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger, request_id_var
 from app.observability.metrics import (
@@ -151,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     # --- Routes -----------------------------------------------------------
+    app.include_router(ui.router)
     app.include_router(health.router)
     app.include_router(documents.router)
     app.include_router(query.router)
