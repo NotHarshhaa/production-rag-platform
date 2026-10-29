@@ -20,8 +20,8 @@ cluster.
 
 ```bash
 # 1. Build and push the image
-docker build -t ghcr.io/your-org/production-rag-platform:1.0.0 .
-docker push ghcr.io/your-org/production-rag-platform:1.0.0
+docker build -t ghcr.io/notharshhaa/production-rag-platform:0.1.0 .
+docker push ghcr.io/notharshhaa/production-rag-platform:0.1.0
 
 # 2. Update the image reference in api.yaml, then create the real secret
 kubectl -n rag-platform create secret generic rag-api-secrets \

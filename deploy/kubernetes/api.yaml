@@ -18,8 +18,8 @@ spec:
       containers:
         - name: api
           # Build and push the image from the repository root:
-          #   docker build -t ghcr.io/your-org/production-rag-platform:1.0.0 .
-          image: ghcr.io/your-org/production-rag-platform:1.0.0
+          #   docker build -t ghcr.io/notharshhaa/production-rag-platform:0.1.0 .
+          image: ghcr.io/notharshhaa/production-rag-platform:0.1.0
           ports:
             - containerPort: 8000
           envFrom:
