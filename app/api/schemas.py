@@ -30,6 +30,14 @@ class DocumentChunkOut(BaseModel):
     tenant_id: str
 
 
+class DocumentRawTextOut(BaseModel):
+    document_id: str
+    name: str
+    num_chunks: int
+    total_chars: int
+    raw_text: str
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=10000)

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 
 from app.api.auth import Tenant
 from app.api.dependencies import ServiceContainer, get_container
-from app.api.schemas import DocumentChunkOut, DocumentOut
+from app.api.schemas import DocumentChunkOut, DocumentOut, DocumentRawTextOut
 from app.core.logging import get_logger
 from app.ingestion.loaders import (
     SUPPORTED_EXTENSIONS,
@@ -234,4 +234,48 @@ def get_document_chunks(
             )
     chunks.sort(key=lambda c: (c.page, c.chunk_index))
     return chunks
+@router.get("/{document_id}/download")
+def download_document(
+    document_id: str, container: _Container, tenant: Tenant
+) -> Response:
+    """Download the original uploaded document with proper content headers."""
+    document = container.repository.get(document_id, tenant)
+    if document is None or document.content is None:
+        raise _not_found(document_id)
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{document.name}"',
+        "Content-Length": str(len(document.content)),
+    }
+    return Response(
+        content=document.content,
+        media_type=document.content_type or "application/octet-stream",
+        headers=headers,
+    )
+
+
+@router.get("/{document_id}/raw", response_model=DocumentRawTextOut)
+def get_raw_text(
+    document_id: str, container: _Container, tenant: Tenant
+) -> DocumentRawTextOut:
+    """Retrieve concatenated full raw text extracted from the document."""
+    document = container.repository.get(document_id, tenant)
+    if document is None:
+        raise _not_found(document_id)
+
+    chunks = []
+    for record in container.pipeline.vector_store.iter_chunks(document_id):
+        meta = record.metadata
+        if meta.get("tenant_id") == tenant:
+            chunks.append((meta.get("page", 1), meta.get("chunk_index", 0), meta.get("text", "")))
+    chunks.sort(key=lambda item: (item[0], item[1]))
+    full_text = "\n\n".join(c[2] for c in chunks)
+
+    return DocumentRawTextOut(
+        document_id=document_id,
+        name=document.name,
+        num_chunks=len(chunks),
+        total_chars=len(full_text),
+        raw_text=full_text,
+    )
 
