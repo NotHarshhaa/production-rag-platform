@@ -48,7 +48,7 @@ retrieved but the wrong part of it.
 
 ### Answers (heuristics)
 
-Answer metrics are transparent lexical heuristics, not LLM judges:
+Answer metrics are transparent lexical heuristics:
 
 | Metric | Definition |
 |---|---|
@@ -58,8 +58,27 @@ Answer metrics are transparent lexical heuristics, not LLM judges:
 
 Treat them as regression signals. A score of 1.0 does not prove the answer
 is correct; a drop against baseline does tell you something changed.
-Integrating an LLM-as-judge (e.g. RAGAS) is a natural extension behind the
-same runner interface.
+
+### Answers (LLM-as-judge)
+
+`--judge` grades every generated answer with the configured LLM as a judge
+and reports three rubric scores, each normalized to 0-1:
+
+| Metric | Rubric (0-5 scale) |
+|---|---|
+| `faithfulness` | Every claim in the answer is supported by the retrieved context |
+| `relevance` | The answer addresses the question (and matches the reference answer when present) |
+| `citation_support` | The cited passages actually contain the information used |
+
+```bash
+python -m app.evaluation.runner --with-answers --judge
+```
+
+Judge scores carry provenance in every report: `judge: "llm"` with the
+judge model name, or `judge: "heuristic"` with `model: "heuristic-fallback"`
+when the deterministic stub provider is configured (the stub cannot follow
+the rubric) or a judge response is unparseable. Judge failures never fail
+the evaluation — they degrade to the lexical heuristics above.
 
 ## Running
 
@@ -72,6 +91,9 @@ python -m app.evaluation.runner
 
 # 3. Full evaluation including generated answers
 python -m app.evaluation.runner --with-answers --top-k 5
+
+# 4. Grade answers with the configured LLM as judge (implies --with-answers)
+python -m app.evaluation.runner --judge --top-k 5
 
 # Options
 python -m app.evaluation.runner --dataset evals/sample_questions.jsonl \

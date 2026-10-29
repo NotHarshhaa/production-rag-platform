@@ -33,14 +33,14 @@ relational database.
 
 | Module | Responsibility |
 |---|---|
-| `app/api` | FastAPI routes, request/response schemas, API-key auth (`auth.py`), dependency wiring (`ServiceContainer`) |
-| `app/core` | Settings (pydantic-settings) and structured logging with request IDs |
-| `app/ingestion` | Loaders (PyMuPDF for PDF), paragraph-aware chunking, the ingest/index pipeline, background workers (`worker.py`) |
-| `app/retrieval` | Embedding providers, vector stores, BM25 + hybrid search, reranking |
+| `app/api` | FastAPI routes (documents, query, conversations, maintenance, health), request/response schemas, API-key auth with per-key quotas (`auth.py`), dependency wiring (`ServiceContainer`) |
+| `app/core` | Settings (pydantic-settings), structured logging with request IDs, shared sliding-window rate limiting |
+| `app/ingestion` | Loaders (PyMuPDF for PDF), paragraph-aware chunking, the ingest/index pipeline, background workers (`worker.py`), retention sweeps (`retention.py`) |
+| `app/retrieval` | Embedding providers, vector stores, BM25 + hybrid search, agentic sub-query decomposition (`query_decomposer.py`), reranking |
 | `app/generation` | Grounded prompts, citation parsing, the answer service with query cache and cost tracking, LLM providers |
-| `app/evaluation` | JSONL datasets, retrieval/answer metrics, the evaluation runner |
+| `app/evaluation` | JSONL datasets, retrieval/answer metrics, LLM-as-judge grading (`judge.py`), the evaluation runner |
 | `app/observability` | Prometheus metrics and optional OpenTelemetry tracing |
-| `app/storage` | SQLAlchemy engine + tenant-scoped `documents` table (SQLite or PostgreSQL) |
+| `app/storage` | SQLAlchemy engine + tenant-scoped `documents` and `conversations` tables (SQLite or PostgreSQL) |
 
 `app/api/dependencies.py` builds one `ServiceContainer` per application
 instance (lifespan-managed). Every component is constructed from `Settings`,
@@ -65,7 +65,29 @@ tests, CI, and offline evaluation. For real semantic quality, switch to
 **Hybrid retrieval with reciprocal rank fusion.** Vector results and BM25
 results are fused with `score = Σ 1/(60 + rank)`. The BM25 index is a pure
 Python Okapi implementation rebuilt lazily whenever the vector store's
-revision counter changes, so new documents are searchable immediately.
+revision counter changes, so new documents are searchable immediately. The
+same rebuild refreshes a chunk-key → metadata map, so BM25 hits outside the
+vector top-N resolve without re-scanning the store.
+
+**Agentic retrieval (mode="agentic").** Compound questions are decomposed
+into focused sub-queries (`query_decomposer.py`): an LLM-based splitter when
+a real provider is configured, a sentence/conjunction heuristic otherwise
+(with the stub provider). Each sub-query is retrieved independently and the
+result lists are fused with the same RRF formula, so agentic mode degrades
+gracefully to plain retrieval for simple questions — the original question
+is always one of the sub-queries.
+
+**Server-side conversations.** `/conversations` stores chat threads per
+tenant (`conversations` + `conversation_messages` tables). `/query` accepts
+`conversation_id`: the stored turns are replayed into the prompt (bounded by
+`CONVERSATION_MAX_TURNS`) and the new question/answer pair is appended, so
+clients never need to resend history. Citation objects are persisted with
+assistant turns for faithful re-rendering.
+
+**Retention.** With `RETENTION_DAYS > 0`, a daemon sweeper
+(`app/ingestion/retention.py`) deletes documents whose `updated_at` is older
+than the window; re-indexing or replacing a document resets its age. The
+same sweep runs on demand via the admin-gated `POST /maintenance/retention`.
 
 **Single-process caveat.** The revision counter and BM25 index are
 process-local. Run the API with one worker (the default) while
@@ -127,13 +149,18 @@ interface's `stream` method over SSE.
 | PUT | `/documents/{id}` | Replace a document's content and re-index |
 | GET | `/documents` | List documents and their status (own tenant only) |
 | GET/DELETE | `/documents/{id}` | Fetch or delete a document and its vectors |
-| POST | `/query` | Grounded answer + citations + retrieval details (cache-aware) |
+| POST | `/query` | Grounded answer + citations + retrieval details (cache-aware; `conversation_id` continues a stored thread) |
 | POST | `/query/stream` | SSE stream: `retrieval`, `delta*`, `done` |
-| GET | `/health` | Component checks (database, vector store) — unauthenticated |
+| POST | `/retrieval/preview` | Retrieval debugging: fused/vector/BM25 scores, agentic sub-queries |
+| POST/GET | `/conversations` | Start / list server-side chat sessions |
+| GET/PATCH/DELETE | `/conversations/{id}` | Fetch with messages / rename / delete |
+| POST | `/maintenance/retention` | Run a retention sweep now (`ADMIN_KEYS` required when auth is on) |
+| GET | `/health` | Component checks + document/chunk stats — unauthenticated |
 | GET | `/metrics` | Prometheus metrics — unauthenticated |
 
-All `/documents` and `/query` routes require an API key when
-`AUTH_ENABLED=true`; see `app/api/auth.py` for the header formats.
+All `/documents`, `/query`, and `/conversations` routes require an API key
+when `AUTH_ENABLED=true`; see `app/api/auth.py` for the header formats and
+the optional `key:tenant:quota` per-key rate limits.
 
 ## Metrics
 
@@ -142,6 +169,7 @@ All `/documents` and `/query` routes require an API key when
 - `rag_llm_latency_seconds{provider}`, `rag_llm_tokens_total{type}`, `rag_llm_errors_total`
 - `rag_llm_cost_usd_total` (estimated spend), `rag_query_cache_total{result}` (hit/miss)
 - `rag_ingestion_latency_seconds{operation}`, `rag_documents_indexed_total{result}`
+- `rag_auth_quota_rejections_total` (per-API-key quota 429s)
 
 A provisioned Grafana dashboard (`RAG Platform Overview`) ships in
 `docker/grafana/dashboards/`.
@@ -151,5 +179,7 @@ A provisioned Grafana dashboard (`RAG Platform Overview`) ships in
 Uploads are extension-validated and size-capped before the body is read.
 Document text is never logged; logs carry ids, statuses, and timings. The
 prompt treats retrieved content as data. Tenant isolation is enforced
-server-side at retrieval time via API-key-mapped tenants. Still open:
-retention policies, per-key quotas, and full RBAC.
+server-side at retrieval time via API-key-mapped tenants. Per-key request
+quotas return 429 with `Retry-After`, and maintenance endpoints require a
+key listed in `ADMIN_KEYS` when auth is enabled. Still open: full RBAC
+beyond tenant scoping and admin keys.

@@ -80,6 +80,12 @@ DOCUMENTS_INDEXED = Counter(
     ["result"],
 )
 
+# --- Auth ----------------------------------------------------------------
+KEY_QUOTA_REJECTIONS = Counter(
+    "rag_auth_quota_rejections_total",
+    "Requests rejected for exceeding a per-API-key quota.",
+)
+
 
 @metrics_router.get("/metrics")
 def expose_metrics() -> Response:

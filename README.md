@@ -40,6 +40,7 @@ The platform ships working defaults that need no API keys or model downloads (de
 
 - Semantic search using vector embeddings.
 - Hybrid retrieval: a pure-Python BM25 keyword index fused with vector results via reciprocal rank fusion.
+- Agentic retrieval (`mode="agentic"`): compound questions are decomposed into focused sub-queries (LLM-assisted when a real provider is configured, heuristic otherwise), each is retrieved separately, and the result lists are fused with RRF for better coverage.
 - Configurable chunk size and overlap.
 - Metadata filtering (document ids, tenant scoping enforced server-side).
 - Optional cross-encoder reranking.
@@ -52,11 +53,14 @@ The platform ships working defaults that need no API keys or model downloads (de
 - Prompts treat document content as untrusted data (prompt-injection defense).
 - Configurable prompts (versioned for evaluation) and model providers.
 - Streaming responses via server-sent events (`/query/stream`).
+- Server-side conversation sessions: threads are persisted per tenant (`/conversations`), and clients continue a thread by sending `conversation_id` instead of replaying history — follow-up questions are answered with the stored context.
 
 ### Authentication and multi-tenancy
 
 - API-key auth (`AUTH_ENABLED` + `API_KEYS`), accepted as `X-API-Key` or `Authorization: Bearer`.
 - Each key maps to a tenant; documents and query results are isolated per tenant at the storage and retrieval layers.
+- Optional per-key request quotas (`API_KEYS=sk-team-a:acme:60`); exceeding a quota returns `429` with `Retry-After` and is tracked as a metric.
+- Maintenance endpoints (e.g. retention sweeps) are gated behind `ADMIN_KEYS`.
 - `/health` and `/metrics` stay open for probes and scraping.
 
 ### Evaluation and quality assurance
@@ -64,6 +68,7 @@ The platform ships working defaults that need no API keys or model downloads (de
 - Versioned JSONL evaluation datasets.
 - Retrieval metrics: Recall@K, Precision@K, MRR.
 - Context coverage plus answer heuristics: faithfulness, answer relevance, citation precision.
+- LLM-as-judge grading (`--judge`): the configured LLM scores faithfulness, relevance, and citation support on a rubric; falls back to the lexical heuristics when only the stub provider is available, and every score carries provenance in the report.
 - Compare chunking, embeddings, retrieval, and prompt configurations against recorded baselines.
 - Evaluation smoke test runs in CI.
 
@@ -72,9 +77,14 @@ The platform ships working defaults that need no API keys or model downloads (de
 - Request latency, error rate, and throughput; per-route histograms.
 - Retrieval latency and retrieved-chunk counts; query cache hit/miss.
 - Token consumption and estimated cost per request (`usage.cost_usd` + `rag_llm_cost_usd_total`).
+- Per-API-key quota rejections (`rag_auth_quota_rejections_total`).
 - Prometheus metrics endpoint and a provisioned Grafana dashboard.
 - Structured JSON logs with request IDs; document content is never logged.
 - Optional OpenTelemetry tracing.
+
+### Lifecycle management
+
+- Retention policy (`RETENTION_DAYS`): documents untouched for N days are removed by a background sweeper and on demand via `POST /maintenance/retention`; a document's age resets whenever it is re-indexed or replaced.
 
 ## Architecture
 
@@ -134,23 +144,28 @@ production-rag-platform/
 │   ├── api/
 │   │   ├── routes/
 │   │   │   ├── documents.py     # Upload / index / update / list / delete
-│   │   │   ├── query.py         # /query and /query/stream (SSE)
+│   │   │   ├── query.py         # /query, /query/stream (SSE), /retrieval/preview
+│   │   │   ├── conversations.py # Server-side chat sessions
+│   │   │   ├── maintenance.py   # Retention sweeps (admin-gated)
 │   │   │   └── health.py        # /health
-│   │   ├── auth.py              # API keys → tenant mapping
+│   │   ├── auth.py              # API keys → tenant mapping, quotas, admin keys
 │   │   ├── dependencies.py      # ServiceContainer wiring
 │   │   └── schemas.py           # Request/response models
 │   ├── core/
 │   │   ├── config.py            # Validated settings (pydantic-settings)
-│   │   └── logging.py           # Structured logs + request IDs
+│   │   ├── logging.py           # Structured logs + request IDs
+│   │   └── ratelimit.py         # Shared sliding-window limiter (IP + per-key quotas)
 │   ├── ingestion/
 │   │   ├── loaders.py           # PDF / TXT / Markdown extraction
 │   │   ├── chunking.py          # Paragraph-aware chunking
 │   │   ├── pipeline.py          # Ingest / index / replace / delete
+│   │   ├── retention.py         # Retention sweeps (background + on demand)
 │   │   └── worker.py            # Background indexing workers
 │   ├── retrieval/
 │   │   ├── embeddings.py        # hashing / sentence-transformers / openai
 │   │   ├── vector_store.py      # local / in-memory / Qdrant
-│   │   ├── hybrid_search.py     # BM25 + RRF hybrid retriever
+│   │   ├── hybrid_search.py     # BM25 + RRF hybrid and agentic retriever
+│   │   ├── query_decomposer.py  # Sub-query decomposition for agentic mode
 │   │   └── reranker.py          # Optional cross-encoder reranking
 │   ├── generation/
 │   │   ├── prompts.py           # Grounded prompt templates (versioned)
@@ -158,13 +173,14 @@ production-rag-platform/
 │   ├── evaluation/
 │   │   ├── datasets.py          # JSONL dataset loading
 │   │   ├── metrics.py           # Recall@K / Precision@K / MRR / answer heuristics
-│   │   └── runner.py            # CLI evaluation runner
+│   │   ├── judge.py             # LLM-as-judge rubric grading
+│   │   └── runner.py            # CLI evaluation runner (--with-answers, --judge)
 │   ├── observability/
 │   │   ├── metrics.py           # Prometheus metrics + /metrics endpoint
 │   │   └── tracing.py           # Optional OpenTelemetry
 │   └── storage/
-│       ├── database.py          # Engine, Document model, schema upgrades
-│       └── repository.py        # Tenant-scoped document repository
+│       ├── database.py          # Engine, Document/Conversation models, schema upgrades
+│       └── repository.py        # Tenant-scoped document + conversation repositories
 ├── tests/
 │   ├── unit/                    # Chunking, BM25, metrics, auth, cache…
 │   ├── integration/             # Full API tests with stub providers
@@ -236,7 +252,9 @@ LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=sk-...
 VECTOR_STORE=qdrant                        # production vector store
 AUTH_ENABLED=true                          # require API keys
-API_KEYS=sk-team-a:acme,sk-team-b:globex   # key:tenant pairs
+API_KEYS=sk-team-a:acme:60,sk-team-b:globex  # key:tenant[:quota-per-minute] pairs
+ADMIN_KEYS=sk-team-a                       # keys allowed to run maintenance endpoints
+RETENTION_DAYS=90                          # delete documents untouched for 90 days
 ```
 
 ### 4. Ingest, query, evaluate
@@ -286,12 +304,16 @@ Kubernetes manifests (Deployment, StatefulSets, HPA, Ingress) live in [`deploy/k
 | GET | `/documents` | List indexed documents |
 | GET/DELETE | `/documents/{id}` | Inspect or delete a document |
 | GET | `/documents/{id}/chunks` | Inspect all indexed chunks and pages for a document |
-| POST | `/retrieval/preview` | Preview retrieval, BM25, and vector scores without LLM generation |
+| POST | `/retrieval/preview` | Preview retrieval, BM25, vector scores, and agentic sub-queries without LLM generation |
 | GET | `/documents/{id}/download` | Download original uploaded document file |
 | GET | `/documents/{id}/raw` | Retrieve concatenated full raw text extracted from document |
-| POST | `/query` | Ask a question against indexed content |
+| POST | `/query` | Ask a question against indexed content (`conversation_id` to continue a stored thread) |
 | POST | `/query/stream` | Stream an answer via server-sent events |
-| GET | `/health` | Check service health |
+| POST | `/conversations` | Start a server-side conversation session |
+| GET | `/conversations` | List saved conversations (most recently active first) |
+| GET/PATCH/DELETE | `/conversations/{id}` | Fetch with messages, rename, or delete a conversation |
+| POST | `/maintenance/retention` | Apply the retention policy immediately (requires `ADMIN_KEYS` when auth is on) |
+| GET | `/health` | Check service health (includes document/chunk stats) |
 | GET | `/metrics` | Expose Prometheus metrics |
 
 Upload a document and index it:
@@ -350,6 +372,43 @@ With authentication enabled, send the key with every request:
 curl -H "X-API-Key: sk-team-a" http://localhost:8000/query
 ```
 
+### Multi-turn conversations (server-side sessions)
+
+```bash
+# Start a session, then continue it by id — history is stored server-side.
+CONV=$(curl -s -X POST http://localhost:8000/conversations | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
+
+curl -s http://localhost:8000/query -H "Content-Type: application/json" -d "{
+  \"question\": \"How does the deployment pipeline work?\",
+  \"conversation_id\": \"$CONV\"
+}"
+
+curl -s http://localhost:8000/query -H "Content-Type: application/json" -d "{
+  \"question\": \"What happens if a release fails?\",
+  \"conversation_id\": \"$CONV\"
+}"
+
+# Inspect, rename, or delete the thread.
+curl http://localhost:8000/conversations/$CONV
+curl -X PATCH http://localhost:8000/conversations/$CONV \
+  -H "Content-Type: application/json" -d '{"title": "Deploy pipeline"}'
+curl -X DELETE http://localhost:8000/conversations/$CONV
+```
+
+### Agentic retrieval for compound questions
+
+```bash
+curl -s http://localhost:8000/query -H "Content-Type: application/json" -d '{
+  "question": "How does deployment work and also how does rollback work?",
+  "mode": "agentic"
+}'
+```
+
+The question is decomposed into sub-queries, each is retrieved (hybrid by
+default), and the results are fused with reciprocal rank fusion. Preview the
+decomposition without an LLM call via `POST /retrieval/preview` with
+`"mode": "agentic"` — the response includes the `subqueries` that were fused.
+
 ## Evaluation Strategy
 
 A RAG system should be evaluated at both the retrieval and generation layers.
@@ -375,13 +434,16 @@ Implemented in this repository:
 - File-type allow list and upload size limits enforced before the body is read.
 - Retrieved documents treated as untrusted input; prompts instruct the model to ignore embedded instructions.
 - API-key authentication with tenant isolation — one tenant's documents can never leak into another tenant's results.
+- Per-key request quotas (`key:tenant:quota` entries in `API_KEYS`) with 429 + `Retry-After` on exhaustion.
+- Maintenance endpoints gated behind `ADMIN_KEYS` when auth is enabled.
+- Retention policies to expire stale documents automatically.
 - Query-result cache invalidated on every corpus change.
 - API keys and credentials stay out of source control (`.env` is gitignored).
 - No document text or secrets in logs — only ids, statuses, and timings.
 - Timeouts and retries on external model calls; optional per-IP rate limiting.
 - `/health` and `/metrics` are the only unauthenticated endpoints.
 
-Still open for production hardening: retention policies, per-key quotas, and full RBAC beyond tenant scoping.
+Still open for production hardening: backup/restore procedures and full RBAC beyond tenant scoping and admin keys.
 
 RAG does not automatically prevent prompt injection or guarantee factual responses. Production deployments need explicit security controls and testing.
 
@@ -420,7 +482,7 @@ RAG does not automatically prevent prompt injection or guarantee factual respons
 - [x] Request timeouts, retries, and rate limiting
 - [x] Token usage and cost tracking
 
-### Phase 5 — Advanced Capabilities
+### Phase 5 — Advanced Capabilities ✅
 
 - [x] Streaming responses
 - [x] Background ingestion workers
@@ -428,10 +490,17 @@ RAG does not automatically prevent prompt injection or guarantee factual respons
 - [x] Pluggable model and vector-store adapters
 - [x] Query result caching
 - [x] Kubernetes deployment examples
-- [ ] Optional agentic retrieval
+- [x] Agentic retrieval (query decomposition + multi-query fusion)
+- [x] LLM-as-judge evaluation (built-in rubric grader with heuristic fallback)
 - [ ] pgvector adapter
-- [ ] LLM-as-judge evaluation (e.g. RAGAS)
 - [ ] Alembic schema migrations
+
+### Phase 6 — Platform Hardening ✅
+
+- [x] Server-side conversation sessions (`/conversations` + `conversation_id`)
+- [x] Document retention policy (`RETENTION_DAYS` + `POST /maintenance/retention`)
+- [x] Per-API-key quotas and admin keys for maintenance endpoints
+- [x] Agentic retrieval preview in the debugging endpoint
 
 ## Contributing
 

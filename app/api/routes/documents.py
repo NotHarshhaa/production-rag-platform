@@ -108,8 +108,17 @@ def upload_document(
                 return DocumentOut.model_validate(
                     {**_to_dict(document), "duplicate": duplicate}
                 )
-            container.pipeline.index_document(document_id, tenant_id=tenant)
-            document = container.repository.get(document_id, tenant)
+            try:
+                container.pipeline.index_document(document_id, tenant_id=tenant)
+                document = container.repository.get(document_id, tenant)
+            except IngestionError:
+                # The upload itself succeeded; report the document with its
+                # failed indexing status (and error) instead of a 500.
+                logger.warning(
+                    "Auto-index failed after upload",
+                    extra={"document_id": document_id, "file": file.filename},
+                )
+                document = container.repository.get(document_id, tenant)
 
         return DocumentOut.model_validate({**_to_dict(document), "duplicate": duplicate})
     except HTTPException:
@@ -207,6 +216,8 @@ def delete_document(document_id: str, container: _Container, tenant: Tenant) -> 
         container.pipeline.delete_document(document_id, tenant_id=tenant)
     except DocumentNotFoundError as exc:
         raise _not_found(document_id) from exc
+
+
 @router.get("/{document_id}/chunks", response_model=list[DocumentChunkOut])
 def get_document_chunks(
     document_id: str, container: _Container, tenant: Tenant
@@ -234,6 +245,8 @@ def get_document_chunks(
             )
     chunks.sort(key=lambda c: (c.page, c.chunk_index))
     return chunks
+
+
 @router.get("/{document_id}/download")
 def download_document(
     document_id: str, container: _Container, tenant: Tenant

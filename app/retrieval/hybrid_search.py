@@ -4,6 +4,10 @@ The BM25 index is rebuilt lazily whenever the vector store's revision
 counter changes, so newly ingested documents are searchable immediately.
 Note the revision counter is process-local: run the API with a single
 worker (the default) when HYBRID_RETRIEVAL is enabled.
+
+``mode="agentic"`` decomposes the question into sub-queries (see
+app/retrieval/query_decomposer.py), retrieves for each, and fuses the
+result lists with RRF — better coverage for compound questions.
 """
 
 import heapq
@@ -17,6 +21,7 @@ from app.core.logging import get_logger
 from app.ingestion.chunking import tokenize
 from app.observability.metrics import RETRIEVAL_LATENCY, RETRIEVED_CHUNKS
 from app.retrieval.embeddings import EmbeddingProvider
+from app.retrieval.query_decomposer import decompose_question
 from app.retrieval.vector_store import VectorStore, matches_filter
 
 logger = get_logger(__name__)
@@ -113,19 +118,22 @@ class BM25Index:
 
 
 class HybridRetriever:
-    """Dense, hybrid, and (optionally) reranked retrieval over the vector store."""
+    """Dense, hybrid, agentic, and (optionally) reranked retrieval."""
 
     def __init__(
         self,
         embeddings: EmbeddingProvider,
         vector_store: VectorStore,
         settings: Settings,
+        llm=None,
     ) -> None:
         self.embeddings = embeddings
         self.vector_store = vector_store
         self.settings = settings
+        self.llm = llm
         self._bm25 = BM25Index()
         self._bm25_revision: int = -1
+        self._metadata_by_key: dict[str, dict[str, Any]] = {}
         self._index_lock = threading.Lock()
 
     def _ensure_bm25_index(self) -> BM25Index:
@@ -134,11 +142,15 @@ class HybridRetriever:
             with self._index_lock:
                 revision = self.vector_store.get_revision()
                 if revision != self._bm25_revision:
-                    documents = [
-                        (record.id, record.metadata.get("text", ""), record.metadata)
-                        for record in self.vector_store.iter_chunks()
-                    ]
+                    metadata_by_key: dict[str, dict[str, Any]] = {}
+                    documents = []
+                    for record in self.vector_store.iter_chunks():
+                        metadata_by_key[record.id] = record.metadata
+                        documents.append(
+                            (record.id, record.metadata.get("text", ""), record.metadata)
+                        )
                     self._bm25.build(documents)
+                    self._metadata_by_key = metadata_by_key
                     self._bm25_revision = revision
                     logger.debug("BM25 index rebuilt", extra={"documents": len(documents)})
         return self._bm25
@@ -154,7 +166,9 @@ class HybridRetriever:
         retrieval_mode = mode or ("hybrid" if self.settings.hybrid_retrieval else "semantic")
 
         started = time.perf_counter()
-        if retrieval_mode == "hybrid":
+        if retrieval_mode == "agentic":
+            chunks = self._retrieve_agentic(question, top_k, metadata_filter)
+        elif retrieval_mode == "hybrid":
             chunks = self._retrieve_hybrid(question, top_k, metadata_filter)
         else:
             chunks = self._retrieve_semantic(question, top_k, metadata_filter)
@@ -163,6 +177,49 @@ class HybridRetriever:
         RETRIEVAL_LATENCY.observe(duration)
         RETRIEVED_CHUNKS.labels(mode=retrieval_mode).observe(len(chunks))
         return chunks
+
+    def subqueries_for(self, question: str) -> list[str]:
+        """The sub-queries agentic mode would run for ``question``."""
+
+        return decompose_question(
+            question, llm=self.llm, max_subqueries=self.settings.agentic_max_subqueries
+        )
+
+    def _retrieve_agentic(
+        self, question: str, top_k: int, metadata_filter: dict[str, Any] | None
+    ) -> list[RetrievedChunk]:
+        subqueries = self.subqueries_for(question)
+        candidate_k = max(top_k, self.settings.retrieval_candidate_k)
+        per_query_limit = min(candidate_k, max(top_k, top_k * 2))
+
+        fused_scores: dict[str, float] = {}
+        chunks_by_key: dict[str, RetrievedChunk] = {}
+        for subquery in subqueries:
+            if self.settings.hybrid_retrieval:
+                hits = self._retrieve_hybrid(subquery, per_query_limit, metadata_filter)
+            else:
+                hits = self._retrieve_semantic(subquery, per_query_limit, metadata_filter)
+            for rank, chunk in enumerate(hits, start=1):
+                key = chunk.chunk_id
+                fused_scores[key] = fused_scores.get(key, 0.0) + 1.0 / (RRF_K + rank)
+                existing = chunks_by_key.get(key)
+                if existing is None:
+                    chunks_by_key[key] = chunk
+                else:
+                    existing.sources |= chunk.sources
+
+        ordered_keys = sorted(fused_scores, key=lambda key: fused_scores[key], reverse=True)
+        results = []
+        for key in ordered_keys[:top_k]:
+            chunk = chunks_by_key[key]
+            chunk.score = round(fused_scores[key], 6)
+            results.append(chunk)
+        if results:
+            logger.debug(
+                "Agentic retrieval fused sub-queries",
+                extra={"subqueries": len(subqueries), "fused_chunks": len(results)},
+            )
+        return results
 
     def _retrieve_semantic(
         self, question: str, top_k: int, metadata_filter: dict[str, Any] | None
@@ -190,14 +247,16 @@ class HybridRetriever:
             fused[hit.id] = fused.get(hit.id, 0.0) + 1.0 / (RRF_K + rank)
             metadata_by_key[hit.id] = hit.metadata
             sources_by_key.setdefault(hit.id, set()).add("vector")
+        # Refresh the BM25 index (and its metadata cache) before fusing.
+        self._ensure_bm25_index()
         for rank, (key, _score) in enumerate(bm25_hits, start=1):
             fused[key] = fused.get(key, 0.0) + 1.0 / (RRF_K + rank)
             if key not in metadata_by_key:
-                # BM25 hit outside the vector top-N: fetch its metadata lazily.
-                for record in self.vector_store.iter_chunks():
-                    if record.id == key:
-                        metadata_by_key[key] = record.metadata
-                        break
+                # BM25 hit outside the vector top-N: metadata is cached from
+                # the last index rebuild.
+                metadata = self._metadata_by_key.get(key)
+                if metadata is not None:
+                    metadata_by_key[key] = metadata
             if key in metadata_by_key:
                 sources_by_key.setdefault(key, set()).add("bm25")
 
@@ -251,16 +310,14 @@ class HybridRetriever:
         ]
 
         bm25_hits: list[dict[str, Any]] = []
-        if retrieval_mode == "hybrid":
+        subqueries: list[str] = []
+        if retrieval_mode == "hybrid" or retrieval_mode == "agentic":
+            if retrieval_mode == "agentic":
+                subqueries = self.subqueries_for(question)
             bm25_raw = self._ensure_bm25_index().search(question, candidate_k, metadata_filter)
             meta_lookup = {hit.id: hit.metadata for hit in vector_hits_raw}
             for rank, (key, score) in enumerate(bm25_raw, start=1):
-                meta = meta_lookup.get(key)
-                if not meta:
-                    for record in self.vector_store.iter_chunks():
-                        if record.id == key:
-                            meta = record.metadata
-                            break
+                meta = meta_lookup.get(key) or self._metadata_by_key.get(key)
                 meta = meta or {}
                 bm25_hits.append(
                     {
@@ -286,5 +343,6 @@ class HybridRetriever:
             "fused_chunks": fused_chunks,
             "vector_hits": vector_hits[:top_k],
             "bm25_hits": bm25_hits[:top_k],
+            "subqueries": subqueries,
         }
 

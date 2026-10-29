@@ -88,12 +88,31 @@ class Settings(BaseSettings):
     # Authentication and multi-tenancy
     auth_enabled: bool = False
     # Comma-separated "key:tenant" pairs; a bare key maps to default_tenant.
+    # An optional third segment sets a per-key request quota per minute
+    # ("key:tenant:60"); 0 or omission means unlimited.
     api_keys: str = ""
     default_tenant: str = "public"
+    # Comma-separated API keys allowed to call maintenance endpoints
+    # (e.g. POST /maintenance/retention). Ignored when auth is disabled.
+    admin_keys: str = ""
 
     # Ingestion: "sync" (blocking) or "background" (thread-pool workers)
     ingestion_mode: str = "sync"
     ingestion_workers: int = 2
+
+    # Retention: delete documents untouched for this many days (0 disables).
+    # Sweeps run in a background thread and on demand via
+    # POST /maintenance/retention.
+    retention_days: int = 0
+    retention_sweep_interval_seconds: int = 3600
+
+    # Conversations: server-side chat sessions. At most this many past turns
+    # are replayed into the prompt (0 keeps every stored turn).
+    conversation_max_turns: int = 10
+
+    # Agentic retrieval: split the question into at most this many sub-queries
+    # and fuse their results (used when mode="agentic").
+    agentic_max_subqueries: int = 3
 
     # Query cache (seconds; 0 disables). Entries are invalidated whenever
     # the corpus changes (any document indexed or deleted).
@@ -126,6 +145,12 @@ class Settings(BaseSettings):
             raise ValueError("INGESTION_MODE must be 'sync' or 'background'")
         if self.ingestion_workers < 1:
             raise ValueError("INGESTION_WORKERS must be at least 1")
+        if self.retention_days < 0:
+            raise ValueError("RETENTION_DAYS must be 0 (disabled) or positive")
+        if self.retention_sweep_interval_seconds < 60:
+            raise ValueError("RETENTION_SWEEP_INTERVAL_SECONDS must be at least 60")
+        if self.agentic_max_subqueries < 1:
+            raise ValueError("AGENTIC_MAX_SUBQUERIES must be at least 1")
         self.log_level = self.log_level.upper()
         return self
 

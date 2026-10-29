@@ -47,12 +47,20 @@ class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=50)
     include_citations: bool = True
+    # Include the retrieved chunk texts in the response (set false to keep
+    # responses small when only the answer is consumed).
+    include_chunks: bool = True
     # Restrict retrieval to specific documents (document UUIDs).
     document_ids: list[str] | None = None
-    # "hybrid" combines BM25 + vectors; "semantic" uses vectors only.
-    mode: Literal["hybrid", "semantic"] | None = None
+    # "hybrid" combines BM25 + vectors; "semantic" uses vectors only;
+    # "agentic" decomposes the question into sub-queries and fuses results.
+    mode: Literal["hybrid", "semantic", "agentic"] | None = None
     # Optional multi-turn conversation context for follow-up questions.
+    # Provide conversation_id to use a server-side session instead.
     conversation_history: list[ChatMessage] | None = Field(default=None, max_length=20)
+    # Server-side conversation session: history is loaded from storage and
+    # this turn (question + answer) is appended to it.
+    conversation_id: str | None = None
 
 
 class CitationOut(BaseModel):
@@ -99,11 +107,15 @@ class QueryResponse(BaseModel):
     latency_ms: float
     cached: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+    conversation_id: str | None = None
+    conversation_title: str | None = None
+
+
 class RetrievalPreviewRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=50)
     document_ids: list[str] | None = None
-    mode: Literal["hybrid", "semantic"] | None = None
+    mode: Literal["hybrid", "semantic", "agentic"] | None = None
 
 
 class DebugScoreItem(BaseModel):
@@ -123,4 +135,38 @@ class RetrievalPreviewResponse(BaseModel):
     fused_chunks: list[RetrievedChunkOut]
     vector_hits: list[DebugScoreItem]
     bm25_hits: list[DebugScoreItem]
+    # Populated for mode="agentic": the sub-queries that were fused.
+    subqueries: list[str] = Field(default_factory=list)
+
+
+# --- Conversations ---------------------------------------------------------
+
+
+class ConversationCreateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+
+
+class ConversationOut(BaseModel):
+    id: str
+    title: str
+    tenant_id: str
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationMessageOut(BaseModel):
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    citations: list[CitationOut] = Field(default_factory=list)
+    created_at: datetime
+
+
+class ConversationDetailOut(ConversationOut):
+    messages: list[ConversationMessageOut] = Field(default_factory=list)
+
+
+class ConversationRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 

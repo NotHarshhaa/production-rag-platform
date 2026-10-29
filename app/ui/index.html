@@ -272,6 +272,27 @@
         </div>
       </div>
 
+      <!-- Saved Conversations -->
+      <div class="p-3 border-b border-slate-200 dark:border-surface-750 bg-white dark:bg-surface-900">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <svg class="w-3 h-3 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+            <span>Saved Chats</span>
+          </h3>
+          <div class="flex items-center gap-1">
+            <button onclick="loadConversations()" title="Refresh conversations" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-surface-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+            <button onclick="startNewConversation()" class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/30 hover:bg-brand-500/20 transition">
+              + New Chat
+            </button>
+          </div>
+        </div>
+        <div id="conversationsList" class="space-y-1 max-h-36 overflow-y-auto">
+          <div class="text-[10px] text-slate-400 text-center py-2">No saved conversations yet.</div>
+        </div>
+      </div>
+
       <!-- Document Cards List -->
       <div id="documentsList" class="flex-1 overflow-y-auto p-3 space-y-2">
         <div class="text-center py-12 text-xs text-slate-400">
@@ -299,10 +320,13 @@
           <!-- Retrieval Mode Switcher -->
           <div class="flex items-center bg-slate-100 dark:bg-surface-850 rounded-lg p-0.5 border border-slate-200 dark:border-surface-750">
             <button id="modeHybrid" onclick="setRetrievalMode('hybrid')" class="px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm">
-              Hybrid (BM25 + Vectors)
+              Hybrid
             </button>
             <button id="modeSemantic" onclick="setRetrievalMode('semantic')" class="px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
-              Semantic Only
+              Semantic
+            </button>
+            <button id="modeAgentic" onclick="setRetrievalMode('agentic')" title="Decomposes the question into sub-queries and fuses their results" class="px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+              Agentic
             </button>
           </div>
 
@@ -527,6 +551,8 @@
       theme: localStorage.getItem('rag_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
       isGenerating: false,
       chatHistory: [],
+      conversationId: null,
+      conversations: [],
     };
 
     // Apply saved theme immediately
@@ -548,6 +574,7 @@
       checkHealth();
       setInterval(checkHealth, 30000);
       loadDocuments();
+      loadConversations();
 
       const input = document.getElementById('questionInput');
       input.addEventListener('input', () => {
@@ -956,15 +983,10 @@
     // Retrieval Controls
     function setRetrievalMode(mode) {
       state.retrievalMode = mode;
-      const btnHybrid = document.getElementById('modeHybrid');
-      const btnSemantic = document.getElementById('modeSemantic');
-
-      if (mode === 'hybrid') {
-        btnHybrid.className = "px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm";
-        btnSemantic.className = "px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition";
-      } else {
-        btnSemantic.className = "px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm";
-        btnHybrid.className = "px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition";
+      const active = "px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm";
+      const inactive = "px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition";
+      for (const id of ['modeHybrid', 'modeSemantic', 'modeAgentic']) {
+        document.getElementById(id).className = id === `mode${mode.charAt(0).toUpperCase()}${mode.slice(1)}` ? active : inactive;
       }
     }
 
@@ -993,6 +1015,120 @@
       container.innerHTML = '';
       const hero = createWelcomeHero();
       container.appendChild(hero);
+    }
+
+    // Saved Conversations (server-side sessions)
+    async function loadConversations() {
+      try {
+        const res = await fetch('/conversations', { headers: getHeaders() });
+        if (!res.ok) throw new Error('Failed to fetch conversations');
+        state.conversations = await res.json();
+        renderConversationsList();
+      } catch (err) {
+        console.error('Error fetching conversations:', err);
+      }
+    }
+
+    function renderConversationsList() {
+      const listEl = document.getElementById('conversationsList');
+      if (state.conversations.length === 0) {
+        listEl.innerHTML = '<div class="text-[10px] text-slate-400 text-center py-2">No saved conversations yet.</div>';
+        return;
+      }
+      listEl.innerHTML = state.conversations.map(conv => {
+        const isActive = conv.id === state.conversationId;
+        return `
+          <div class="group flex items-center gap-1 rounded-lg border px-2 py-1.5 cursor-pointer transition ${isActive ? 'border-brand-500 bg-brand-50/60 dark:bg-brand-500/10' : 'border-slate-200 dark:border-surface-750 hover:bg-slate-50 dark:hover:bg-surface-850'}" onclick="loadConversation('${conv.id}')">
+            <div class="flex-1 min-w-0">
+              <div class="text-[11px] font-medium text-slate-800 dark:text-slate-200 truncate ${isActive ? 'text-brand-700 dark:text-brand-300' : ''}" title="${escapeHtml(conv.title)}">${escapeHtml(conv.title)}</div>
+              <div class="text-[9px] text-slate-400 font-mono">${conv.message_count} messages</div>
+            </div>
+            <button onclick="event.stopPropagation(); deleteConversation('${conv.id}', this)" title="Delete conversation" class="p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function ensureConversationId() {
+      if (state.conversationId) return state.conversationId;
+      const res = await fetch('/conversations', {
+        method: 'POST',
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) return null;
+      const conversation = await res.json();
+      state.conversationId = conversation.id;
+      state.conversations.unshift(conversation);
+      renderConversationsList();
+      return conversation.id;
+    }
+
+    function startNewConversation() {
+      state.conversationId = null;
+      state.chatHistory = [];
+      const container = document.getElementById('chatContainer');
+      container.innerHTML = '';
+      container.appendChild(createWelcomeHero());
+      renderConversationsList();
+    }
+
+    async function loadConversation(conversationId) {
+      if (state.isGenerating) return;
+      try {
+        const res = await fetch(`/conversations/${conversationId}`, { headers: getHeaders() });
+        if (!res.ok) throw new Error('Failed to load conversation');
+        const data = await res.json();
+
+        state.conversationId = data.id;
+        state.chatHistory = [];
+        const container = document.getElementById('chatContainer');
+        container.innerHTML = '';
+
+        for (const message of data.messages) {
+          if (message.role === 'user') {
+            appendUserMessage(message.content);
+            state.chatHistory.push({ role: 'user', content: message.content });
+          } else {
+            const dataObj = {
+              answer: message.content,
+              citations: message.citations || [],
+              insufficient_context: false,
+              cached: false,
+              retrieval: null,
+              usage: null,
+              latency_ms: null,
+            };
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex justify-start';
+            container.appendChild(wrapper);
+            state.chatHistory.push({ role: 'assistant', data: dataObj });
+            renderCompleteAnswer(wrapper, dataObj);
+          }
+        }
+        container.scrollTop = container.scrollHeight;
+        renderConversationsList();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function deleteConversation(conversationId) {
+      try {
+        const res = await fetch(`/conversations/${conversationId}`, {
+          method: 'DELETE',
+          headers: getHeaders(),
+        });
+        if (!res.ok) throw new Error('Delete failed');
+        if (state.conversationId === conversationId) {
+          startNewConversation();
+        }
+        await loadConversations();
+      } catch (err) {
+        alert(err.message);
+      }
     }
 
     function createWelcomeHero() {
@@ -1036,14 +1172,21 @@
       state.isGenerating = true;
       document.getElementById('sendBtn').disabled = true;
 
-      if (streamChecked) {
-        await executeStreamingQuery(question);
-      } else {
-        await executeStandardQuery(question);
-      }
+      try {
+        // First message opens a server-side session so the thread can be
+        // saved, resumed, and exported later.
+        await ensureConversationId();
 
-      state.isGenerating = false;
-      document.getElementById('sendBtn').disabled = false;
+        if (streamChecked) {
+          await executeStreamingQuery(question);
+        } else {
+          await executeStandardQuery(question);
+        }
+      } finally {
+        state.isGenerating = false;
+        document.getElementById('sendBtn').disabled = false;
+        loadConversations();
+      }
     }
 
     function appendUserMessage(text) {
@@ -1059,25 +1202,32 @@
       container.scrollTop = container.scrollHeight;
     }
 
-    async function executeStandardQuery(question) {
-      const container = document.getElementById('chatContainer');
-      const assistantDiv = document.createElement('div');
-      assistantDiv.className = 'flex justify-start';
-
+    function buildQueryPayload(question, history) {
       const docIds = state.selectedDocumentIds.size > 0 ? Array.from(state.selectedDocumentIds) : null;
-      const history = state.chatHistory.slice(-6).map(m => ({
-        role: m.role,
-        content: m.role === 'user' ? m.content : (m.data ? m.data.answer : '')
-      })).filter(m => m.content && m.content.trim().length > 0);
-
-      const payload = {
+      return {
         question: question,
         top_k: state.topK,
         include_citations: true,
         document_ids: docIds,
         mode: state.retrievalMode,
-        conversation_history: history.length > 0 ? history : null,
+        // With a server-side session the backend replays stored history;
+        // otherwise fall back to the last client-side turns.
+        conversation_id: state.conversationId,
+        conversation_history: state.conversationId ? null : history,
       };
+    }
+
+    async function executeStandardQuery(question) {
+      const container = document.getElementById('chatContainer');
+      const assistantDiv = document.createElement('div');
+      assistantDiv.className = 'flex justify-start';
+
+      const history = state.chatHistory.slice(-6).map(m => ({
+        role: m.role,
+        content: m.role === 'user' ? m.content : (m.data ? m.data.answer : '')
+      })).filter(m => m.content && m.content.trim().length > 0);
+
+      const payload = buildQueryPayload(question, history);
 
       assistantDiv.innerHTML = `
         <div class="max-w-3xl w-full bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl rounded-tl-sm p-5 text-sm shadow-sm dark:shadow-xl space-y-3">
@@ -1120,20 +1270,12 @@
       const assistantDiv = document.createElement('div');
       assistantDiv.className = 'flex justify-start';
 
-      const docIds = state.selectedDocumentIds.size > 0 ? Array.from(state.selectedDocumentIds) : null;
       const history = state.chatHistory.slice(-6).map(m => ({
         role: m.role,
         content: m.role === 'user' ? m.content : (m.data ? m.data.answer : '')
       })).filter(m => m.content && m.content.trim().length > 0);
 
-      const payload = {
-        question: question,
-        top_k: state.topK,
-        include_citations: true,
-        document_ids: docIds,
-        mode: state.retrievalMode,
-        conversation_history: history.length > 0 ? history : null,
-      };
+      const payload = buildQueryPayload(question, history);
 
       assistantDiv.innerHTML = `
         <div class="max-w-3xl w-full bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl rounded-tl-sm p-5 text-sm shadow-sm dark:shadow-xl space-y-3">
@@ -1152,6 +1294,7 @@
 
       let accumulatedText = "";
       let finalData = null;
+      let retrievalInfo = null;
 
       try {
         const response = await fetch('/query/stream', {
@@ -1191,7 +1334,14 @@
             const parsed = JSON.parse(eventData);
 
             if (eventType === "retrieval") {
-              statusEl.innerHTML = `<span class="text-brand-600 dark:text-brand-400 font-medium">Retrieved ${parsed.chunks_returned} chunks in ${parsed.latency_ms.toFixed(1)}ms (${parsed.mode})</span>`;
+              // Keep the retrieval payload for the final render: it carries
+              // the mode and the chunk texts used for citation snippets.
+              retrievalInfo = {
+                chunks_returned: parsed.chunks_returned,
+                mode: parsed.mode,
+                chunks: parsed.chunks || [],
+              };
+              statusEl.innerHTML = `<span class="text-brand-600 dark:text-brand-400 font-medium">Retrieved ${parsed.chunks_returned} chunks (${parsed.mode})</span>`;
             } else if (eventType === "delta") {
               accumulatedText += parsed.text;
               bodyEl.innerHTML = formatMarkdownWithCitations(accumulatedText);
@@ -1208,8 +1358,9 @@
         statusEl.classList.add('hidden');
 
         if (finalData) {
-          state.chatHistory.push({ role: 'assistant', data: finalData });
-          renderCompleteAnswer(assistantDiv, finalData);
+          const dataWithRetrieval = { ...finalData, retrieval: retrievalInfo };
+          state.chatHistory.push({ role: 'assistant', data: dataWithRetrieval });
+          renderCompleteAnswer(assistantDiv, dataWithRetrieval);
         }
       } catch (err) {
         bodyEl.classList.remove('streaming-cursor');
@@ -1237,7 +1388,7 @@
       const latency = data.latency_ms ? data.latency_ms.toFixed(0) : '0';
       const cost = data.usage && data.usage.cost_usd ? `$${data.usage.cost_usd.toFixed(4)}` : '$0.0000';
       const totalTokens = data.usage ? data.usage.total_tokens : 0;
-      const mode = data.retrieval ? data.retrieval.mode : 'hybrid';
+      const mode = data.retrieval ? data.retrieval.mode : 'saved';
 
       // Citations / Sources Cards
       const citationsHtml = citations.length > 0 ? `
@@ -1361,6 +1512,7 @@
     function saveSettings() {
       const key = document.getElementById('settingApiKey').value.trim();
       const tenant = document.getElementById('settingTenant').value.trim() || 'public';
+      const tenantChanged = key !== state.apiKey || tenant !== state.tenant;
 
       state.apiKey = key;
       state.tenant = tenant;
@@ -1372,6 +1524,16 @@
       toggleSettingsModal(false);
       checkHealth();
       loadDocuments();
+      if (tenantChanged) {
+        // Sessions and documents belong to a tenant; switching tenants
+        // invalidates the active thread and list.
+        state.conversationId = null;
+        state.chatHistory = [];
+        const container = document.getElementById('chatContainer');
+        container.innerHTML = '';
+        container.appendChild(createWelcomeHero());
+        loadConversations();
+      }
     }
 
     function escapeHtml(str) {

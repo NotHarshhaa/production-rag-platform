@@ -3,6 +3,7 @@
 Usage:
     python -m app.evaluation.runner --dataset evals/sample_questions.jsonl
     python -m app.evaluation.runner --with-answers --top-k 5
+    python -m app.evaluation.runner --with-answers --judge
 
 The runner reuses the configured retrieval stack (see app.api.dependencies).
 Reports are written to evals/reports/ and printed as a compact summary.
@@ -19,6 +20,7 @@ from app.api.dependencies import build_container
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.evaluation.datasets import EvalQuestion, load_dataset
+from app.evaluation.judge import judge_answer
 from app.evaluation.metrics import (
     answer_relevance_estimate,
     citation_precision,
@@ -29,6 +31,7 @@ from app.evaluation.metrics import (
     precision_at_k,
     recall_at_k,
 )
+from app.generation.prompts import PROMPT_VERSION
 
 logger = get_logger(__name__)
 
@@ -41,6 +44,7 @@ def evaluate_question(
     container,
     top_k: int,
     with_answers: bool,
+    with_judge: bool = False,
 ) -> dict:
     started = time.perf_counter()
     if with_answers:
@@ -98,6 +102,14 @@ def evaluate_question(
             )
         record["answer"] = answer_metrics
         record["usage"] = usage
+        if with_judge:
+            record["judge"] = judge_answer(
+                container.answer_service.llm,
+                question=item.question,
+                answer=answer_text,
+                context_texts=context_texts,
+                reference_answer=item.reference_answer,
+            )
     return record
 
 
@@ -105,6 +117,7 @@ def run_evaluation(
     dataset_path: str | Path = DEFAULT_DATASET,
     top_k: int = 5,
     with_answers: bool = False,
+    with_judge: bool = False,
     limit: int | None = None,
     container=None,
 ) -> dict:
@@ -112,12 +125,14 @@ def run_evaluation(
     if container is None:
         container = build_container(settings)
 
+    with_answers = with_answers or with_judge
     questions = load_dataset(dataset_path)
     if limit:
         questions = questions[:limit]
 
     records = [
-        evaluate_question(item, container, top_k, with_answers) for item in questions
+        evaluate_question(item, container, top_k, with_answers, with_judge)
+        for item in questions
     ]
 
     retrieval_recall = [
@@ -164,6 +179,15 @@ def run_evaluation(
         summary["tokens"] = {
             "total": sum(r.get("usage", {}).get("total_tokens", 0) for r in records)
         }
+    if with_judge:
+        judged = [r["judge"] for r in records if "judge" in r]
+        summary["judge"] = {
+            "model": judged[0]["model"] if judged else "n/a",
+            "mode": judged[0]["judge"] if judged else "n/a",
+            "faithfulness": mean([j["faithfulness"] for j in judged]),
+            "relevance": mean([j["relevance"] for j in judged]),
+            "citation_support": mean([j["citation_support"] for j in judged]),
+        }
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -174,7 +198,10 @@ def run_evaluation(
             "hybrid_retrieval": settings.hybrid_retrieval,
             "chunk_size": settings.chunk_size,
             "chunk_overlap": settings.chunk_overlap,
-            "prompt_version": "v1",
+            "prompt_version": PROMPT_VERSION,
+            **(
+                {"judge_model": container.answer_service.llm.model} if with_judge else {}
+            ),
         },
         "summary": summary,
         "results": records,
@@ -212,6 +239,14 @@ def print_summary(report: dict) -> None:
             f"citation_precision={answer['citation_precision']}"
         )
         print(f"Tokens:         total={summary['tokens']['total']}")
+    if "judge" in summary:
+        judge = summary["judge"]
+        print(
+            f"Judge ({judge['model']}, {judge['mode']}):  "
+            f"faithfulness={judge['faithfulness']}  "
+            f"relevance={judge['relevance']}  "
+            f"citation_support={judge['citation_support']}"
+        )
     print(f"Latency ms:     {summary['latency_ms_p50_p95']}")
 
 
@@ -221,6 +256,11 @@ def main() -> int:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument(
         "--with-answers", action="store_true", help="Also generate and score answers"
+    )
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Grade answers with the configured LLM as judge (implies --with-answers)",
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--output-dir", default=str(DEFAULT_REPORT_DIR))
@@ -233,6 +273,7 @@ def main() -> int:
         dataset_path=args.dataset,
         top_k=args.top_k,
         with_answers=args.with_answers,
+        with_judge=args.judge,
         limit=args.limit,
     )
 

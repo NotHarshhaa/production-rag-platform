@@ -2,9 +2,7 @@
 
 import time
 import uuid
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from threading import Lock
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,9 +11,10 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.dependencies import build_container
-from app.api.routes import documents, health, query, ui
+from app.api.routes import conversations, documents, health, maintenance, query, ui
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger, request_id_var
+from app.core.ratelimit import SlidingWindowLimiter
 from app.observability.metrics import (
     IN_PROGRESS,
     REQUEST_LATENCY,
@@ -27,28 +26,6 @@ from app.observability.tracing import setup_tracing
 logger = get_logger(__name__)
 
 
-class RateLimiter:
-    """Fixed-window per-client-IP limiter, applied when a limit is configured."""
-
-    def __init__(self, limit_per_minute: int) -> None:
-        self.limit = limit_per_minute
-        self._hits: dict[str, deque] = defaultdict(lambda: deque(maxlen=limit_per_minute))
-        self._lock = Lock()
-
-    def allow(self, client_ip: str) -> bool:
-        if self.limit <= 0:
-            return True
-        window_start = time.time() - 60.0
-        with self._lock:
-            hits = self._hits[client_ip]
-            while hits and hits[0] < window_start:
-                hits.popleft()
-            if len(hits) >= self.limit:
-                return False
-            hits.append(time.time())
-            return True
-
-
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_json)
@@ -57,6 +34,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         container = build_container(settings)
         app.state.container = container
+        if container.retention_sweeper is not None:
+            container.retention_sweeper.start()
         logger.info(
             "RAG platform started",
             extra={
@@ -67,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
         yield
+        if container.retention_sweeper is not None:
+            container.retention_sweeper.stop()
         container.shutdown()
         logger.info("RAG platform stopped")
 
@@ -89,7 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    limiter = RateLimiter(settings.rate_limit_per_minute)
+    limiter = SlidingWindowLimiter(settings.rate_limit_per_minute)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -155,6 +136,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(documents.router)
     app.include_router(query.router)
+    app.include_router(conversations.router)
+    app.include_router(maintenance.router)
     if settings.metrics_enabled:
         app.include_router(metrics_router)
 

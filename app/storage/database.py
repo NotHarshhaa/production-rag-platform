@@ -7,9 +7,9 @@ The same model serves SQLite (local development, tests) and PostgreSQL
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import String, create_engine, text
+from sqlalchemy import String, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.schema import ForeignKey, UniqueConstraint
 
 DEFAULT_TENANT = "public"
 
@@ -49,6 +49,48 @@ class Document(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Document id={self.id!r} name={self.name!r} status={self.status!r}>"
+
+
+class Conversation(Base):
+    """A named chat session whose turns are persisted server-side.
+
+    Conversations are scoped by ``tenant_id`` like documents; clients replay
+    them by sending ``conversation_id`` on /query instead of resending the
+    full message history.
+    """
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), default=DEFAULT_TENANT, index=True)
+    title: Mapped[str] = mapped_column(String(200), default="New conversation")
+    created_at: Mapped[datetime] = mapped_column(default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<Conversation id={self.id!r} title={self.title!r}>"
+
+
+class ConversationMessage(Base):
+    """One turn in a conversation: role, content, and optional citations.
+
+    ``citations`` holds the JSON array of citation objects for assistant
+    turns so a client re-rendering a session sees the same sources.
+    """
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str]
+    content: Mapped[str] = mapped_column(Text)
+    citations: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(default=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<ConversationMessage id={self.id!r} role={self.role!r}>"
 
 
 def build_engine(database_url: str):

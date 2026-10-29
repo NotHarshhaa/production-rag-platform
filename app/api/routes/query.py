@@ -19,7 +19,8 @@ from app.api.schemas import (
     RetrievedChunkOut,
     UsageInfo,
 )
-from app.generation.answer import LLMError
+from app.generation.answer import AnswerResult, LLMError
+from app.storage.database import Conversation
 
 router = APIRouter(tags=["query"])
 
@@ -34,15 +35,69 @@ def _build_filter(tenant: str, document_ids: list[str] | None) -> dict:
     return metadata_filter
 
 
-@router.post("/query", response_model=QueryResponse)
-def query(request: QueryRequest, container: _Container, tenant: Tenant) -> QueryResponse:
+def _resolve_conversation(
+    container: ServiceContainer, tenant: str, request: QueryRequest
+) -> tuple[Conversation | None, list[dict[str, str]] | None]:
+    """Return the conversation to persist into (or None) and the history to use.
+
+    With ``conversation_id`` the stored history is authoritative unless the
+    client also sent explicit ``conversation_history`` turns.
+    """
+
     history_dicts = (
         [m.model_dump() for m in request.conversation_history]
         if request.conversation_history
         else None
     )
+    if not request.conversation_id:
+        return None, history_dicts
+
+    conversation = container.conversations.get(request.conversation_id, tenant)
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {request.conversation_id} not found",
+        )
+    if history_dicts is not None:
+        return conversation, history_dicts
+
+    max_turns = container.settings.conversation_max_turns
+    limit = max_turns * 2 if max_turns > 0 else None
+    stored = container.conversations.list_messages(conversation.id, limit=limit)
+    stored_history = [{"role": m.role, "content": m.content} for m in stored]
+    return conversation, (stored_history or None)
+
+
+def _persist_turn(
+    container: ServiceContainer,
+    conversation: Conversation,
+    question: str,
+    answer: str,
+    citations: list,
+) -> None:
+    """Append the question and the answer to the stored conversation."""
+
+    citation_dicts = [
+        {
+            "document_id": c.document_id,
+            "document_name": c.document_name,
+            "page": c.page,
+            "chunk_id": c.chunk_id,
+            "score": c.score,
+        }
+        for c in citations
+    ]
+    container.conversations.append_message(conversation.id, "user", question)
+    container.conversations.append_message(
+        conversation.id, "assistant", answer, citations=citation_dicts
+    )
+
+
+@router.post("/query", response_model=QueryResponse)
+def query(request: QueryRequest, container: _Container, tenant: Tenant) -> QueryResponse:
+    conversation, history_dicts = _resolve_conversation(container, tenant, request)
     try:
-        result = container.answer_service.answer(
+        result: AnswerResult = container.answer_service.answer(
             question=request.question,
             top_k=request.top_k,
             metadata_filter=_build_filter(tenant, request.document_ids),
@@ -54,6 +109,10 @@ def query(request: QueryRequest, container: _Container, tenant: Tenant) -> Query
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"LLM provider error: {exc}",
         ) from exc
+
+    if conversation is not None:
+        _persist_turn(container, conversation, request.question, result.answer, result.citations)
+        conversation = container.conversations.get(conversation.id, tenant)
 
     return QueryResponse(
         answer=result.answer,
@@ -81,7 +140,7 @@ def query(request: QueryRequest, container: _Container, tenant: Tenant) -> Query
                     score=chunk.score,
                     text=chunk.text,
                 )
-                for chunk in result.chunks
+                for chunk in (result.chunks if request.include_chunks else [])
             ],
         ),
         usage=UsageInfo(
@@ -97,6 +156,8 @@ def query(request: QueryRequest, container: _Container, tenant: Tenant) -> Query
         latency_ms=result.total_latency_ms,
         cached=result.cached,
         metadata={"prompt_version": result.prompt_version},
+        conversation_id=conversation.id if conversation else None,
+        conversation_title=conversation.title if conversation else None,
     )
 
 
@@ -105,11 +166,10 @@ def query_stream(
     request: QueryRequest, container: _Container, tenant: Tenant
 ) -> StreamingResponse:
     """Server-sent events: retrieval, delta*, then done (or error)."""
-    history_dicts = (
-        [m.model_dump() for m in request.conversation_history]
-        if request.conversation_history
-        else None
-    )
+
+    # Resolve (and validate) the conversation before the stream starts so a
+    # bad conversation_id surfaces as a normal 404 response.
+    conversation, history_dicts = _resolve_conversation(container, tenant, request)
 
     def event_stream():
         try:
@@ -120,12 +180,38 @@ def query_stream(
                 mode=request.mode,
                 conversation_history=history_dicts,
             ):
+                if conversation is not None and event["type"] == "done":
+                    data = event["data"]
+                    _persist_turn(
+                        container,
+                        conversation,
+                        request.question,
+                        data.get("answer", ""),
+                        _stream_citations(data.get("citations", [])),
+                    )
                 yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
         except LLMError as exc:
             payload = json.dumps({"detail": f"LLM provider error: {exc}"})
             yield f"event: error\ndata: {payload}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+class _StreamCitation:
+    """Attribute view over a citation dict from a stream's done event."""
+
+    def __init__(self, data: dict) -> None:
+        self.document_id = data.get("document_id", "")
+        self.document_name = data.get("document_name", "")
+        self.page = data.get("page", 0)
+        self.chunk_id = data.get("chunk_id", "")
+        self.score = data.get("score", 0.0)
+
+
+def _stream_citations(raw: list[dict]) -> list[_StreamCitation]:
+    return [_StreamCitation(citation) for citation in raw]
+
+
 @router.post("/retrieval/preview", response_model=RetrievalPreviewResponse)
 def preview_retrieval(
     request: RetrievalPreviewRequest, container: _Container, tenant: Tenant
@@ -187,5 +273,5 @@ def preview_retrieval(
         fused_chunks=fused_chunks,
         vector_hits=vector_hits,
         bm25_hits=bm25_hits,
+        subqueries=raw.get("subqueries", []),
     )
-
