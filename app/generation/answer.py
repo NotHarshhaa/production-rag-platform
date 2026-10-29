@@ -95,7 +95,11 @@ class QueryCache:
 
     @staticmethod
     def make_key(
-        question: str, top_k: int | None, metadata_filter: dict | None, mode: str | None
+        question: str,
+        top_k: int | None,
+        metadata_filter: dict | None,
+        mode: str | None,
+        conversation_history: list[dict] | None = None,
     ) -> str:
         material = json.dumps(
             {
@@ -103,6 +107,7 @@ class QueryCache:
                 "top_k": top_k,
                 "filter": metadata_filter,
                 "mode": mode,
+                "history": conversation_history,
             },
             sort_keys=True,
         )
@@ -364,6 +369,27 @@ def parse_citations(answer: str, chunks: list[RetrievedChunk]) -> list[Citation]
     return citations
 
 
+def _contextual_search_query(question: str, history: list[dict[str, str]] | None) -> str:
+    """Expand search query with context from previous user turn if needed."""
+    if not history:
+        return question
+    last_user_turn = None
+    for turn in reversed(history):
+        if turn.get("role") == "user" and turn.get("content"):
+            last_user_turn = turn.get("content", "").strip()
+            break
+    if not last_user_turn:
+        return question
+    pronouns = {
+        "it", "this", "that", "these", "those", "they", "its", "their", "second",
+        "first", "third", "former", "latter", "again", "elaborate", "expand",
+    }
+    words = set(re.findall(r"\b\w+\b", question.lower()))
+    if len(words) <= 5 or bool(words & pronouns):
+        return f"{last_user_turn} {question}"
+    return question
+
+
 class AnswerService:
     """Retrieval-augmented answering with enforced grounding and citations."""
 
@@ -386,8 +412,9 @@ class AnswerService:
         top_k: int | None,
         metadata_filter: dict[str, Any] | None,
         mode: str | None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> str:
-        return self.cache.make_key(question, top_k, metadata_filter, mode)
+        return self.cache.make_key(question, top_k, metadata_filter, mode, conversation_history)
 
     def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         cost = (
@@ -402,9 +429,10 @@ class AnswerService:
         top_k: int | None = None,
         metadata_filter: dict[str, Any] | None = None,
         mode: str | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> AnswerResult:
         revision = self.retriever.vector_store.get_revision()
-        cache_key = self._cache_key(question, top_k, metadata_filter, mode)
+        cache_key = self._cache_key(question, top_k, metadata_filter, mode, conversation_history)
         cached_result = self.cache.get(cache_key, revision)
         if cached_result is not None:
             QUERY_CACHE.labels(result="hit").inc()
@@ -412,14 +440,16 @@ class AnswerService:
         QUERY_CACHE.labels(result="miss").inc()
 
         started = time.perf_counter()
+        search_query = _contextual_search_query(question, conversation_history)
         chunks = self.retriever.retrieve(
-            question, top_k=top_k, metadata_filter=metadata_filter, mode=mode
+            search_query, top_k=top_k, metadata_filter=metadata_filter, mode=mode
         )
         retrieval_latency_ms = (time.perf_counter() - started) * 1000
 
         reranked = False
         if chunks and self.reranker.enabled:
-            chunks = self.reranker.rerank(question, chunks, top_k or self.settings.retrieval_top_k)
+            limit = top_k or self.settings.retrieval_top_k
+            chunks = self.reranker.rerank(search_query, chunks, limit)
             reranked = True
 
         if not chunks:
@@ -449,7 +479,7 @@ class AnswerService:
             return result
 
         context = build_context(chunks)
-        messages = build_messages(question, context)
+        messages = build_messages(question, context, conversation_history=conversation_history)
         llm_started = time.perf_counter()
         try:
             response = self.llm.generate(
@@ -510,12 +540,14 @@ class AnswerService:
         top_k: int | None = None,
         metadata_filter: dict[str, Any] | None = None,
         mode: str | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Yield SSE-ready event dicts: retrieval, delta*, then done (or error)."""
 
         started = time.perf_counter()
+        search_query = _contextual_search_query(question, conversation_history)
         chunks = self.retriever.retrieve(
-            question, top_k=top_k, metadata_filter=metadata_filter, mode=mode
+            search_query, top_k=top_k, metadata_filter=metadata_filter, mode=mode
         )
         yield {
             "type": "retrieval",
@@ -552,7 +584,7 @@ class AnswerService:
             return
 
         context = build_context(chunks)
-        messages = build_messages(question, context)
+        messages = build_messages(question, context, conversation_history=conversation_history)
         collected: list[str] = []
         try:
             for delta in self.llm.stream(

@@ -32,8 +32,21 @@ def build_context(chunks: list, max_chars_per_chunk: int = 1500) -> str:
     return "\n\n".join(sections)
 
 
-def build_messages(question: str, context: str) -> list[dict[str, str]]:
-    """Build the chat messages for an OpenAI-compatible provider."""
+def build_messages(
+    question: str,
+    context: str,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """Build the chat messages for an OpenAI-compatible provider with optional turn history."""
+
+    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if conversation_history:
+        for turn in conversation_history:
+            role = turn.get("role")
+            content = (turn.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
 
     user_content = (
         f"Context passages:\n\n{context}\n\n"
@@ -41,7 +54,5 @@ def build_messages(question: str, context: str) -> list[dict[str, str]]:
         "Answer the question using only the context above. "
         "Cite passages inline as [n]."
     )
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
-    ]
+    messages.append({"role": "user", "content": user_content})
+    return messages

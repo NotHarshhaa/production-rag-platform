@@ -285,6 +285,7 @@ Kubernetes manifests (Deployment, StatefulSets, HPA, Ingress) live in [`deploy/k
 | PUT | `/documents/{id}` | Replace a document's content and re-index |
 | GET | `/documents` | List indexed documents |
 | GET/DELETE | `/documents/{id}` | Inspect or delete a document |
+| GET | `/documents/{id}/chunks` | Inspect all indexed chunks and pages for a document |
 | POST | `/query` | Ask a question against indexed content |
 | POST | `/query/stream` | Stream an answer via server-sent events |
 | GET | `/health` | Check service health |
