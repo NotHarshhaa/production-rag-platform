@@ -22,6 +22,7 @@ from typing import Any
 
 from app.core.config import LLM_OPENAI, LLM_STUB, Settings
 from app.core.logging import get_logger
+from app.evaluation.metrics import faithfulness_estimate
 from app.generation.prompts import PROMPT_VERSION, build_context, build_messages
 from app.ingestion.chunking import estimate_tokens, tokenize
 from app.observability.metrics import LLM_COST, LLM_ERRORS, LLM_LATENCY, LLM_TOKENS, QUERY_CACHE
@@ -66,6 +67,7 @@ class AnswerResult:
     citations: list[Citation] = field(default_factory=list)
     chunks: list[RetrievedChunk] = field(default_factory=list)
     insufficient_context: bool = False
+    groundedness_score: float = 1.0
     retrieval_mode: str = "hybrid"
     retrieval_latency_ms: float = 0.0
     total_latency_ms: float = 0.0
@@ -498,6 +500,7 @@ class AnswerService:
         LLM_COST.inc(cost)
 
         citations = parse_citations(response.text, chunks)
+        groundedness = round(faithfulness_estimate(response.text, [c.text for c in chunks]), 4)
         if not citations:
             # The model cited nothing; surface the top chunk so answers always
             # point at at least one source.
@@ -519,6 +522,7 @@ class AnswerService:
             citations=citations,
             chunks=chunks,
             insufficient_context=False,
+            groundedness_score=groundedness,
             retrieval_mode=mode or ("hybrid" if self.settings.hybrid_retrieval else "semantic"),
             retrieval_latency_ms=round(retrieval_latency_ms, 2),
             total_latency_ms=round(total_ms, 2),
@@ -615,6 +619,9 @@ class AnswerService:
                     for citation in citations
                 ],
                 "insufficient_context": False,
+                "groundedness_score": round(
+                    faithfulness_estimate(answer, [c.text for c in chunks]), 4
+                ),
                 "latency_ms": round((time.perf_counter() - started) * 1000, 2),
             },
         }

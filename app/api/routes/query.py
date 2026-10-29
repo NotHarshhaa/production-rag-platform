@@ -89,6 +89,7 @@ def query(request: QueryRequest, container: _Container, tenant: Tenant) -> Query
             model=result.usage.get("model", ""),
         ),
         insufficient_context=result.insufficient_context,
+        groundedness_score=result.groundedness_score,
         prompt_version=result.prompt_version,
         latency_ms=result.total_latency_ms,
         cached=result.cached,
