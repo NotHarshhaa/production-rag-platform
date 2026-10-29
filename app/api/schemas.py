@@ -98,3 +98,28 @@ class QueryResponse(BaseModel):
     latency_ms: float
     cached: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+class RetrievalPreviewRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=50)
+    document_ids: list[str] | None = None
+    mode: Literal["hybrid", "semantic"] | None = None
+
+
+class DebugScoreItem(BaseModel):
+    chunk_id: str
+    document_id: str
+    document_name: str
+    page: int
+    score: float
+    rank: int
+    text: str
+
+
+class RetrievalPreviewResponse(BaseModel):
+    question: str
+    mode: str
+    latency_ms: float
+    fused_chunks: list[RetrievedChunkOut]
+    vector_hits: list[DebugScoreItem]
+    bm25_hits: list[DebugScoreItem]
+

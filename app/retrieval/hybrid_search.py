@@ -224,3 +224,67 @@ class HybridRetriever:
             score=round(float(score), 6),
             sources=sources,
         )
+    def debug_retrieve(
+        self,
+        question: str,
+        top_k: int = 5,
+        metadata_filter: dict[str, Any] | None = None,
+        mode: str | None = None,
+    ) -> dict[str, Any]:
+        started = time.perf_counter()
+        retrieval_mode = mode or ("hybrid" if self.settings.hybrid_retrieval else "semantic")
+        candidate_k = max(top_k, self.settings.retrieval_candidate_k)
+
+        query_vector = self.embeddings.embed_query(question)
+        vector_hits_raw = self.vector_store.search(query_vector, candidate_k, metadata_filter)
+        vector_hits = [
+            {
+                "chunk_id": hit.metadata.get("chunk_id", hit.id),
+                "document_id": hit.metadata.get("document_id", ""),
+                "document_name": hit.metadata.get("document_name", ""),
+                "page": int(hit.metadata.get("page", 1) or 1),
+                "score": round(float(hit.score), 6),
+                "rank": rank,
+                "text": hit.metadata.get("text", ""),
+            }
+            for rank, hit in enumerate(vector_hits_raw, start=1)
+        ]
+
+        bm25_hits: list[dict[str, Any]] = []
+        if retrieval_mode == "hybrid":
+            bm25_raw = self._ensure_bm25_index().search(question, candidate_k, metadata_filter)
+            meta_lookup = {hit.id: hit.metadata for hit in vector_hits_raw}
+            for rank, (key, score) in enumerate(bm25_raw, start=1):
+                meta = meta_lookup.get(key)
+                if not meta:
+                    for record in self.vector_store.iter_chunks():
+                        if record.id == key:
+                            meta = record.metadata
+                            break
+                meta = meta or {}
+                bm25_hits.append(
+                    {
+                        "chunk_id": meta.get("chunk_id", key),
+                        "document_id": meta.get("document_id", ""),
+                        "document_name": meta.get("document_name", ""),
+                        "page": int(meta.get("page", 1) or 1),
+                        "score": round(float(score), 6),
+                        "rank": rank,
+                        "text": meta.get("text", ""),
+                    }
+                )
+
+        fused_chunks = self.retrieve(
+            question, top_k=top_k, metadata_filter=metadata_filter, mode=mode
+        )
+        latency_ms = round((time.perf_counter() - started) * 1000, 2)
+
+        return {
+            "question": question,
+            "mode": retrieval_mode,
+            "latency_ms": latency_ms,
+            "fused_chunks": fused_chunks,
+            "vector_hits": vector_hits[:top_k],
+            "bm25_hits": bm25_hits[:top_k],
+        }
+

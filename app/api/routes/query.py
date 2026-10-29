@@ -10,9 +10,12 @@ from app.api.auth import Tenant
 from app.api.dependencies import ServiceContainer, get_container
 from app.api.schemas import (
     CitationOut,
+    DebugScoreItem,
     QueryRequest,
     QueryResponse,
     RetrievalInfo,
+    RetrievalPreviewRequest,
+    RetrievalPreviewResponse,
     RetrievedChunkOut,
     UsageInfo,
 )
@@ -122,3 +125,66 @@ def query_stream(
             yield f"event: error\ndata: {payload}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+@router.post("/retrieval/preview", response_model=RetrievalPreviewResponse)
+def preview_retrieval(
+    request: RetrievalPreviewRequest, container: _Container, tenant: Tenant
+) -> RetrievalPreviewResponse:
+    """Preview retrieval results, vector similarity scores, and BM25 scores.
+
+    Runs scoring without LLM generation to allow fast debugging.
+    """
+    metadata_filter = _build_filter(tenant, request.document_ids)
+    raw = container.retriever.debug_retrieve(
+        question=request.question,
+        top_k=request.top_k,
+        metadata_filter=metadata_filter,
+        mode=request.mode,
+    )
+
+    fused_chunks = [
+        RetrievedChunkOut(
+            chunk_id=chunk.chunk_id,
+            document_id=chunk.document_id,
+            document_name=chunk.document_name,
+            page=chunk.page,
+            score=chunk.score,
+            text=chunk.text,
+        )
+        for chunk in raw["fused_chunks"]
+    ]
+
+    vector_hits = [
+        DebugScoreItem(
+            chunk_id=item["chunk_id"],
+            document_id=item["document_id"],
+            document_name=item["document_name"],
+            page=item["page"],
+            score=item["score"],
+            rank=item["rank"],
+            text=item["text"],
+        )
+        for item in raw["vector_hits"]
+    ]
+
+    bm25_hits = [
+        DebugScoreItem(
+            chunk_id=item["chunk_id"],
+            document_id=item["document_id"],
+            document_name=item["document_name"],
+            page=item["page"],
+            score=item["score"],
+            rank=item["rank"],
+            text=item["text"],
+        )
+        for item in raw["bm25_hits"]
+    ]
+
+    return RetrievalPreviewResponse(
+        question=raw["question"],
+        mode=raw["mode"],
+        latency_ms=raw["latency_ms"],
+        fused_chunks=fused_chunks,
+        vector_hits=vector_hits,
+        bm25_hits=bm25_hits,
+    )
+
