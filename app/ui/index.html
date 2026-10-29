@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Production RAG Platform</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%22100%22%20height=%22100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
-  
-  <!-- Tailwind CSS & Marked.js for rich markdown rendering -->
+
+  <!-- Tailwind CSS & Marked.js -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
@@ -18,18 +18,25 @@
             brand: {
               50: '#eef2ff',
               100: '#e0e7ff',
+              200: '#c7d2fe',
               400: '#818cf8',
               500: '#6366f1',
               600: '#4f46e5',
               700: '#4338ca',
             },
             surface: {
-              900: '#09090b',
-              850: '#121215',
-              800: '#18181b',
-              700: '#27272a',
-              600: '#3f3f46',
+              950: '#090a0f',
+              900: '#0e1117',
+              850: '#141822',
+              800: '#1a202c',
+              750: '#222938',
+              700: '#2d3748',
+              600: '#4a5568',
             }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
           }
         }
       }
@@ -37,278 +44,378 @@
   </script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    code, pre {
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .scrollbar-thin::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    .scrollbar-thin::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .scrollbar-thin::-webkit-scrollbar-thumb {
-      background: #27272a;
-      border-radius: 9999px;
-    }
-    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-      background: #3f3f46;
-    }
-    .prose pre {
-      background-color: #121215;
-      padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
-      overflow-x: auto;
-      border: 1px solid #27272a;
-    }
-    .prose code {
-      color: #e0e7ff;
-      background-color: rgba(99, 102, 241, 0.15);
-      padding: 0.15rem 0.35rem;
-      border-radius: 0.25rem;
-      font-size: 0.875em;
-    }
-    .prose p {
-      margin-bottom: 0.75rem;
-      line-height: 1.625;
-    }
-    .prose ul, .prose ol {
-      margin-left: 1.25rem;
-      margin-bottom: 0.75rem;
-    }
+    
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    html.dark ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 9999px; }
+    html.dark ::-webkit-scrollbar-thumb:hover { background: #4a5568; }
+    html:not(.dark) ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Prose / Markdown Styling for Dark Mode */
+    html.dark .prose { color: #e2e8f0; max-width: none; }
+    html.dark .prose h1, html.dark .prose h2, html.dark .prose h3, html.dark .prose h4 { color: #f8fafc; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+    html.dark .prose pre { background-color: #090a0f !important; border: 1px solid #222938; }
+    html.dark .prose code { color: #a5b4fc; background-color: rgba(99, 102, 241, 0.15); }
+    html.dark .prose pre code { color: #f1f5f9; background-color: transparent !important; }
+    html.dark .prose blockquote { border-left: 3px solid #6366f1; color: #94a3b8; }
+    html.dark .prose th, html.dark .prose td { border: 1px solid #222938; }
+    html.dark .prose th { background-color: #141822; color: #f8fafc; }
+
+    /* Prose / Markdown Styling for Light Mode */
+    html:not(.dark) .prose { color: #334155; max-width: none; }
+    html:not(.dark) .prose h1, html:not(.dark) .prose h2, html:not(.dark) .prose h3, html:not(.dark) .prose h4 { color: #0f172a; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+    html:not(.dark) .prose pre { background-color: #f8fafc !important; border: 1px solid #e2e8f0; }
+    html:not(.dark) .prose code { color: #4338ca; background-color: #eef2ff; }
+    html:not(.dark) .prose pre code { color: #0f172a; background-color: transparent !important; }
+    html:not(.dark) .prose blockquote { border-left: 3px solid #4f46e5; color: #64748b; }
+    html:not(.dark) .prose th, html:not(.dark) .prose td { border: 1px solid #e2e8f0; }
+    html:not(.dark) .prose th { background-color: #f1f5f9; color: #0f172a; }
+
+    .prose p { margin-bottom: 0.85rem; line-height: 1.65; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose h1 { font-size: 1.25rem; }
+    .prose h2 { font-size: 1.1rem; }
+    .prose h3 { font-size: 1rem; }
+    .prose ul, .prose ol { margin-left: 1.25rem; margin-bottom: 0.85rem; }
     .prose ul { list-style-type: disc; }
     .prose ol { list-style-type: decimal; }
+    .prose li { margin-bottom: 0.25rem; }
+    .prose pre { padding: 0.85rem 1rem; border-radius: 0.6rem; overflow-x: auto; margin: 0.75rem 0; position: relative; }
+    .prose code { padding: 0.15rem 0.35rem; border-radius: 0.3rem; font-size: 0.875em; font-family: 'JetBrains Mono', monospace; }
+    .prose pre code { padding: 0; font-size: 0.825em; }
+    .prose blockquote { padding-left: 0.85rem; font-style: italic; margin: 0.75rem 0; }
+    .prose table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.825rem; }
+    .prose th, .prose td { padding: 0.4rem 0.65rem; text-align: left; }
+    
+    /* Streaming Cursor */
     .streaming-cursor::after {
       content: '▋';
       display: inline-block;
       vertical-align: baseline;
-      animation: blink 1s step-end infinite;
-      color: #818cf8;
+      animation: blink 0.8s step-end infinite;
+      color: #6366f1;
       margin-left: 2px;
     }
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* Citation Badge in prose */
+    .citation-ref {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.05rem 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin: 0 0.15rem;
+      text-decoration: none;
+      vertical-align: baseline;
+    }
+    html.dark .citation-ref {
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+    }
+    html.dark .citation-ref:hover {
+      background: rgba(99, 102, 241, 0.45);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
+    html:not(.dark) .citation-ref {
+      background: #e0e7ff;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
+    }
+    html:not(.dark) .citation-ref:hover {
+      background: #6366f1;
+      color: #ffffff;
+      transform: translateY(-1px);
     }
   </style>
 </head>
-<body class="bg-surface-900 text-zinc-100 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-brand-500 selection:text-white">
+<body class="bg-slate-50 dark:bg-surface-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col h-screen overflow-hidden antialiased selection:bg-brand-500 selection:text-white font-sans transition-colors duration-200">
 
-  <!-- Top Navbar -->
-  <header class="h-14 border-b border-surface-700 bg-surface-850/80 backdrop-blur-md flex items-center justify-between px-5 shrink-0 z-20">
+  <!-- Top Navigation Header -->
+  <header class="h-14 border-b border-slate-200 dark:border-surface-750 bg-white/90 dark:bg-surface-900/90 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 shrink-0 z-30 transition-colors">
     <div class="flex items-center gap-3">
-      <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-brand-500/20 text-white font-bold text-base">
-        ⚡
-      </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-sm tracking-tight text-white">Production RAG Platform</span>
-          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-surface-700 text-zinc-400 border border-surface-600">v0.1.0</span>
+      <!-- Mobile Sidebar Toggle -->
+      <button onclick="toggleSidebar()" class="lg:hidden p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-surface-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+
+      <!-- Logo & Branding -->
+      <div class="flex items-center gap-2.5">
+        <div class="h-8 w-8 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/25 text-white font-bold text-sm">
+          ⚡
         </div>
-        <p class="text-[11px] text-zinc-400 hidden sm:block">Grounded Retrieval-Augmented Generation & Multi-Tenant Engine</p>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-sm tracking-tight text-slate-900 dark:text-white">Production RAG Platform</span>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/20">v0.1.0</span>
+          </div>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">Grounded Document Q&A & Multi-Tenant Retrieval Engine</p>
+        </div>
       </div>
     </div>
 
-    <!-- Right Controls & Status -->
-    <div class="flex items-center gap-3">
-      <!-- Health Badge -->
-      <div id="healthBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-800 border border-surface-700 text-xs text-zinc-300">
+    <!-- Right Controls: Theme Toggle, Status & Platform Links -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Realtime Health Status -->
+      <div id="healthBadge" onclick="checkHealth(true)" title="Click to refresh system health" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-surface-850 border border-slate-200 dark:border-surface-750 hover:border-slate-300 dark:hover:border-surface-600 text-xs transition">
         <span class="relative flex h-2 w-2">
           <span id="healthPulse" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
           <span id="healthDot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
         </span>
-        <span id="healthText" class="font-medium text-[11px]">System Ready</span>
+        <span id="healthText" class="font-medium text-[11px] text-slate-700 dark:text-slate-300">Healthy</span>
       </div>
 
-      <!-- Quick Platform Links -->
-      <div class="hidden lg:flex items-center gap-1 border-l border-surface-700 pl-3">
-        <a href="/docs" target="_blank" title="OpenAPI / Swagger Specs" class="px-2 py-1 text-xs rounded hover:bg-surface-700 text-zinc-400 hover:text-zinc-200 transition">Swagger</a>
-        <a href="http://localhost:3000" target="_blank" title="Grafana Dashboards" class="px-2 py-1 text-xs rounded hover:bg-surface-700 text-zinc-400 hover:text-zinc-200 transition">Grafana</a>
-        <a href="http://localhost:6333/dashboard" target="_blank" title="Qdrant Vector Dashboard" class="px-2 py-1 text-xs rounded hover:bg-surface-700 text-zinc-400 hover:text-zinc-200 transition">Qdrant</a>
+      <!-- Quick Platform Navigation Links -->
+      <div class="hidden md:flex items-center gap-1 border-l border-slate-200 dark:border-surface-750 pl-3">
+        <a href="/docs" target="_blank" class="px-2.5 py-1 text-xs rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-surface-800 transition flex items-center gap-1">
+          <span>API Docs</span>
+          <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+        </a>
+        <a href="http://localhost:3000" target="_blank" class="px-2.5 py-1 text-xs rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-surface-800 transition flex items-center gap-1">
+          <span>Grafana</span>
+          <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+        </a>
+        <a href="http://localhost:6333/dashboard" target="_blank" class="px-2.5 py-1 text-xs rounded-md text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-surface-800 transition flex items-center gap-1">
+          <span>Qdrant</span>
+          <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+        </a>
       </div>
+
+      <!-- Light / Dark Mode Toggle Button -->
+      <button onclick="toggleTheme()" id="themeToggleBtn" title="Toggle Light / Dark mode" class="p-1.5 rounded-lg bg-slate-100 dark:bg-surface-800 hover:bg-slate-200 dark:hover:bg-surface-750 border border-slate-200 dark:border-surface-700 text-slate-600 dark:text-slate-200 transition shadow-sm">
+        <!-- Sun icon (shown in dark mode) -->
+        <svg id="themeIconSun" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        <!-- Moon icon (shown in light mode) -->
+        <svg id="themeIconMoon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+      </button>
 
       <!-- Settings Button -->
-      <button onclick="toggleSettingsModal(true)" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-xs font-medium text-zinc-200 transition">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      <button onclick="toggleSettingsModal(true)" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-surface-800 hover:bg-slate-200 dark:hover:bg-surface-750 border border-slate-200 dark:border-surface-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition shadow-sm">
+        <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         <span class="hidden sm:inline">Settings</span>
       </button>
     </div>
   </header>
 
-  <!-- Main Workspace -->
-  <div class="flex-1 flex overflow-hidden">
+  <!-- Workspace Container -->
+  <div class="flex-1 flex overflow-hidden relative">
 
     <!-- Left Sidebar: Knowledge Base & Ingestion -->
-    <aside class="w-80 md:w-96 border-r border-surface-700 bg-surface-850 flex flex-col shrink-0">
+    <aside id="sidebar" class="w-80 md:w-96 border-r border-slate-200 dark:border-surface-750 bg-white dark:bg-surface-900 flex flex-col shrink-0 transition-all duration-200 z-20 absolute lg:static inset-y-0 left-0 -translate-x-full lg:translate-x-0 shadow-2xl lg:shadow-none">
       
-      <!-- Ingestion Header -->
-      <div class="p-4 border-b border-surface-700">
+      <!-- Sidebar Header -->
+      <div class="p-4 border-b border-slate-200 dark:border-surface-750">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">Knowledge Base</h2>
-            <span id="docCountBadge" class="text-[10px] font-medium bg-brand-500/20 text-brand-400 px-2 py-0.5 rounded-full border border-brand-500/30">0</span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+              <span>Knowledge Base</span>
+            </h2>
+            <span id="docCountBadge" class="text-[10px] font-bold bg-brand-500/10 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full border border-brand-500/30">0</span>
           </div>
-          <button onclick="loadDocuments()" title="Refresh documents" class="p-1 rounded hover:bg-surface-700 text-zinc-400 hover:text-zinc-200 transition">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          </button>
+          <div class="flex items-center gap-1">
+            <button onclick="loadDocuments()" title="Refresh documents" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-surface-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+            <button onclick="toggleSidebar()" class="lg:hidden p-1 rounded-md hover:bg-slate-100 dark:hover:bg-surface-800 text-slate-500 dark:text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
         </div>
 
-        <!-- Dropzone -->
+        <!-- Drag & Drop Dropzone -->
         <div id="dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"
-          class="border-2 border-dashed border-surface-600 hover:border-brand-500 rounded-xl p-4 text-center cursor-pointer bg-surface-900/60 hover:bg-brand-500/5 transition group">
-          <input type="file" id="fileInput" class="hidden" accept=".pdf,.txt,.md" onchange="handleFileSelect(event)">
+          class="border-2 border-dashed border-slate-300 dark:border-surface-700 hover:border-brand-500 rounded-xl p-4 text-center cursor-pointer bg-slate-50/70 dark:bg-surface-950/40 hover:bg-brand-500/5 transition group">
+          <input type="file" id="fileInput" class="hidden" accept=".pdf,.txt,.md" multiple onchange="handleFileSelect(event)">
           <div class="flex flex-col items-center gap-1.5" onclick="document.getElementById('fileInput').click()">
-            <div class="w-9 h-9 rounded-full bg-surface-800 flex items-center justify-center text-zinc-400 group-hover:text-brand-400 group-hover:scale-105 transition">
+            <div class="w-9 h-9 rounded-full bg-white dark:bg-surface-800 border border-slate-200 dark:border-surface-700 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:text-brand-600 dark:group-hover:text-brand-400 group-hover:scale-105 transition shadow-sm">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             </div>
-            <div class="text-xs font-medium text-zinc-300">Drop PDF, Markdown, or TXT</div>
-            <div class="text-[11px] text-zinc-500">Max size 25MB • Page-aware splitting</div>
+            <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-white">Drop PDF, TXT, or Markdown</div>
+            <div class="text-[11px] text-slate-500">Page-aware chunking • Auto deduplication</div>
           </div>
         </div>
 
-        <!-- Upload Options -->
-        <div class="mt-3 flex items-center justify-between text-xs text-zinc-400">
+        <!-- Upload Options & Feedback -->
+        <div class="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
           <label class="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" id="autoIndexCheckbox" checked class="rounded border-surface-600 bg-surface-800 text-brand-500 focus:ring-0">
-            <span>Auto-index on upload</span>
+            <input type="checkbox" id="autoIndexCheckbox" checked class="rounded border-slate-300 dark:border-surface-700 bg-white dark:bg-surface-800 text-brand-600 focus:ring-0 cursor-pointer">
+            <span class="text-[11px] text-slate-700 dark:text-slate-300">Auto-index on upload</span>
           </label>
-          <span id="uploadStatusText" class="text-[11px] text-brand-400"></span>
+          <span id="uploadStatusText" class="text-[11px] font-medium text-brand-600 dark:text-brand-400"></span>
         </div>
       </div>
 
-      <!-- Scope / Filter info -->
-      <div class="px-4 py-2 bg-surface-900/40 border-b border-surface-700/60 flex items-center justify-between text-[11px] text-zinc-400">
-        <span id="selectionScopeText">Searching across all indexed documents</span>
-        <button id="clearSelectionBtn" onclick="clearDocumentSelection()" class="text-brand-400 hover:underline hidden">Select All</button>
-      </div>
+      <!-- Search & Selection Filter Bar -->
+      <div class="p-3 border-b border-slate-200 dark:border-surface-750 bg-white dark:bg-surface-900 space-y-2">
+        <div class="relative">
+          <input type="text" id="docSearchInput" oninput="filterDocumentsList()" placeholder="Filter documents..."
+            class="w-full bg-slate-50 dark:bg-surface-950 border border-slate-200 dark:border-surface-750 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-brand-500 transition">
+          <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </div>
 
-      <!-- Documents List -->
-      <div id="documentsList" class="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
-        <div class="text-center py-10 text-xs text-zinc-500">
-          <svg class="w-8 h-8 mx-auto mb-2 text-zinc-600 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          No documents uploaded yet.<br>Drag and drop files above to start.
+        <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
+          <span id="selectionScopeText">All documents included</span>
+          <div class="flex items-center gap-2">
+            <button id="selectAllBtn" onclick="selectAllDocuments()" class="text-brand-600 dark:text-brand-400 hover:underline">Select All</button>
+            <span class="text-slate-300 dark:text-slate-600">•</span>
+            <button id="clearSelectionBtn" onclick="clearDocumentSelection()" class="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">Clear</button>
+          </div>
         </div>
       </div>
 
-      <!-- Footer Info -->
-      <div class="p-3 border-t border-surface-700 bg-surface-900/50 text-[11px] text-zinc-500 flex items-center justify-between">
-        <span id="activeTenantLabel">Tenant: <strong class="text-zinc-300">public</strong></span>
-        <span>Isolated Indexing</span>
+      <!-- Document Cards List -->
+      <div id="documentsList" class="flex-1 overflow-y-auto p-3 space-y-2">
+        <div class="text-center py-12 text-xs text-slate-400">
+          <svg class="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          No documents uploaded yet.<br>Drop documents above to build your index.
+        </div>
+      </div>
+
+      <!-- Sidebar Footer -->
+      <div class="p-3 border-t border-slate-200 dark:border-surface-750 bg-slate-50 dark:bg-surface-950/60 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+        <span id="activeTenantLabel" class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-brand-500"></span>
+          <span>Tenant: <strong class="text-slate-800 dark:text-slate-200">public</strong></span>
+        </span>
+        <span class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">Isolated Context</span>
       </div>
     </aside>
 
-    <!-- Right Chat Area -->
-    <main class="flex-1 flex flex-col bg-surface-900 relative">
+    <!-- Right Main Chat Arena -->
+    <main class="flex-1 flex flex-col bg-slate-100/60 dark:bg-surface-950 relative min-w-0 transition-colors">
 
-      <!-- Query Mode Controls Bar -->
-      <div class="h-12 border-b border-surface-700 bg-surface-850/60 backdrop-blur px-5 flex items-center justify-between text-xs shrink-0">
+      <!-- Query Controls Toolbar -->
+      <div class="h-12 border-b border-slate-200 dark:border-surface-750 bg-white/80 dark:bg-surface-900/80 backdrop-blur px-4 sm:px-6 flex items-center justify-between text-xs shrink-0 transition-colors">
         <div class="flex items-center gap-3">
-          <div class="flex items-center bg-surface-800 rounded-lg p-0.5 border border-surface-700">
+          <!-- Retrieval Mode Switcher -->
+          <div class="flex items-center bg-slate-100 dark:bg-surface-850 rounded-lg p-0.5 border border-slate-200 dark:border-surface-750">
             <button id="modeHybrid" onclick="setRetrievalMode('hybrid')" class="px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm">
               Hybrid (BM25 + Vectors)
             </button>
-            <button id="modeSemantic" onclick="setRetrievalMode('semantic')" class="px-2.5 py-1 rounded-md font-medium text-xs text-zinc-400 hover:text-zinc-200 transition">
+            <button id="modeSemantic" onclick="setRetrievalMode('semantic')" class="px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
               Semantic Only
             </button>
           </div>
 
           <!-- Top-K Slider -->
-          <div class="hidden sm:flex items-center gap-2 text-zinc-400 pl-2">
+          <div class="hidden sm:flex items-center gap-2 text-slate-500 dark:text-slate-400 pl-2">
             <span>Top-K:</span>
-            <input type="range" id="topKSlider" min="1" max="15" value="5" oninput="updateTopK(this.value)" class="w-20 accent-brand-500 h-1 bg-surface-700 rounded-lg cursor-pointer">
-            <span id="topKValue" class="font-mono text-zinc-200 w-4 text-center">5</span>
+            <input type="range" id="topKSlider" min="1" max="15" value="5" oninput="updateTopK(this.value)" class="w-20 accent-brand-600 h-1 bg-slate-200 dark:bg-surface-750 rounded-lg cursor-pointer">
+            <span id="topKValue" class="font-mono text-slate-800 dark:text-slate-200 w-4 text-center font-semibold">5</span>
           </div>
 
           <!-- Streaming Toggle -->
-          <label class="hidden md:flex items-center gap-1.5 text-zinc-400 cursor-pointer ml-2">
-            <input type="checkbox" id="streamingToggle" checked class="rounded border-surface-600 bg-surface-800 text-brand-500 focus:ring-0">
-            <span>Stream response</span>
+          <label class="hidden md:flex items-center gap-1.5 text-slate-500 dark:text-slate-400 cursor-pointer ml-2">
+            <input type="checkbox" id="streamingToggle" checked class="rounded border-slate-300 dark:border-surface-700 bg-white dark:bg-surface-800 text-brand-600 focus:ring-0">
+            <span>Live streaming</span>
           </label>
         </div>
 
-        <div>
-          <button onclick="clearChatHistory()" class="px-2 py-1 text-zinc-400 hover:text-zinc-200 hover:bg-surface-800 rounded transition flex items-center gap-1 text-[11px]">
+        <div class="flex items-center gap-2">
+          <!-- Export Chat -->
+          <button onclick="exportChatHistory()" title="Download conversation as Markdown" class="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-surface-800 rounded-md transition text-xs flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <span class="hidden sm:inline">Export</span>
+          </button>
+
+          <!-- Clear Thread -->
+          <button onclick="clearChatHistory()" class="px-2.5 py-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-surface-800 rounded-md transition flex items-center gap-1 text-[11px]">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-            Clear Chat
+            <span>Clear</span>
           </button>
         </div>
       </div>
 
-      <!-- Messages Scroll Area -->
-      <div id="chatContainer" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 scrollbar-thin">
+      <!-- Messages Stream Area -->
+      <div id="chatContainer" class="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6">
         
-        <!-- Welcome Hero (Shown when empty) -->
-        <div id="welcomeHero" class="max-w-2xl mx-auto py-12 text-center space-y-6">
-          <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center mx-auto shadow-2xl shadow-brand-500/30 text-white text-3xl">
-            ⚡
+        <!-- Welcome Hero Banner -->
+        <div id="welcomeHero" class="max-w-2xl mx-auto py-10 sm:py-16 text-center space-y-6">
+          <div class="relative inline-block">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center mx-auto shadow-2xl shadow-brand-500/30 text-white text-3xl">
+              ⚡
+            </div>
+            <div class="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-1 border-2 border-white dark:border-surface-950">
+              <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+            </div>
           </div>
+
           <div class="space-y-2">
-            <h1 class="text-2xl font-bold tracking-tight text-white">Grounded Document Q&A</h1>
-            <p class="text-sm text-zinc-400 max-w-lg mx-auto">
-              Answers are generated strictly from your uploaded documents with precise page-number citations. If the retrieved context is insufficient, the system refuses to guess.
+            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Grounded Document Q&A</h1>
+            <p class="text-sm text-slate-600 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">
+              Ask natural-language questions about your ingested documents. Every answer is strictly grounded in retrieved passages with verifiable page-number citations.
             </p>
           </div>
 
-          <!-- Sample Prompts -->
-          <div class="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left max-w-xl mx-auto">
-            <button onclick="usePrompt('What are the main concepts and architecture described in these documents?')" class="p-3 rounded-xl bg-surface-800/80 hover:bg-surface-800 border border-surface-700 hover:border-brand-500/50 transition group text-left">
-              <div class="text-xs font-semibold text-zinc-200 group-hover:text-brand-400 flex items-center justify-between">
+          <!-- Suggested Questions Grid -->
+          <div class="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left max-w-xl mx-auto">
+            <button onclick="usePrompt('Summarize the key architectural components and retrieval data flow.')" class="p-3.5 rounded-xl bg-white dark:bg-surface-900/90 hover:bg-slate-50 dark:hover:bg-surface-850 border border-slate-200 dark:border-surface-750 hover:border-brand-500/50 transition group text-left shadow-sm">
+              <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 flex items-center justify-between">
                 <span>Architecture overview</span>
-                <span class="text-zinc-500">→</span>
+                <span class="text-slate-400 group-hover:translate-x-0.5 transition">→</span>
               </div>
-              <p class="text-[11px] text-zinc-400 mt-1 line-clamp-1">Summarize key components and data flow</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">Summarize hybrid retrieval and storage layout</p>
             </button>
 
-            <button onclick="usePrompt('What security recommendations, authentication, and isolation mechanisms are specified?')" class="p-3 rounded-xl bg-surface-800/80 hover:bg-surface-800 border border-surface-700 hover:border-brand-500/50 transition group text-left">
-              <div class="text-xs font-semibold text-zinc-200 group-hover:text-brand-400 flex items-center justify-between">
+            <button onclick="usePrompt('What security, authentication, and multi-tenant isolation mechanisms are supported?')" class="p-3.5 rounded-xl bg-white dark:bg-surface-900/90 hover:bg-slate-50 dark:hover:bg-surface-850 border border-slate-200 dark:border-surface-750 hover:border-brand-500/50 transition group text-left shadow-sm">
+              <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 flex items-center justify-between">
                 <span>Security & Isolation</span>
-                <span class="text-zinc-500">→</span>
+                <span class="text-slate-400 group-hover:translate-x-0.5 transition">→</span>
               </div>
-              <p class="text-[11px] text-zinc-400 mt-1 line-clamp-1">Multi-tenancy, API keys, and validation</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">API keys, tenant scoping, and prompt injection defense</p>
             </button>
 
-            <button onclick="usePrompt('How is RAG evaluated? What metrics are measured and how does the runner work?')" class="p-3 rounded-xl bg-surface-800/80 hover:bg-surface-800 border border-surface-700 hover:border-brand-500/50 transition group text-left">
-              <div class="text-xs font-semibold text-zinc-200 group-hover:text-brand-400 flex items-center justify-between">
-                <span>Evaluation & Metrics</span>
-                <span class="text-zinc-500">→</span>
+            <button onclick="usePrompt('How does the evaluation pipeline measure Recall@K, Precision@K, and MRR?')" class="p-3.5 rounded-xl bg-white dark:bg-surface-900/90 hover:bg-slate-50 dark:hover:bg-surface-850 border border-slate-200 dark:border-surface-750 hover:border-brand-500/50 transition group text-left shadow-sm">
+              <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 flex items-center justify-between">
+                <span>Evaluation Metrics</span>
+                <span class="text-slate-400 group-hover:translate-x-0.5 transition">→</span>
               </div>
-              <p class="text-[11px] text-zinc-400 mt-1 line-clamp-1">Recall@K, MRR, Faithfulness, latency</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">Recall, MRR, answer relevance, and CI smoke test</p>
             </button>
 
-            <button onclick="usePrompt('How can this platform be deployed on Kubernetes or Docker in production?')" class="p-3 rounded-xl bg-surface-800/80 hover:bg-surface-800 border border-surface-700 hover:border-brand-500/50 transition group text-left">
-              <div class="text-xs font-semibold text-zinc-200 group-hover:text-brand-400 flex items-center justify-between">
+            <button onclick="usePrompt('How can this platform be deployed on Kubernetes or Docker with observability?')" class="p-3.5 rounded-xl bg-white dark:bg-surface-900/90 hover:bg-slate-50 dark:hover:bg-surface-850 border border-slate-200 dark:border-surface-750 hover:border-brand-500/50 transition group text-left shadow-sm">
+              <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 flex items-center justify-between">
                 <span>Production Deployment</span>
-                <span class="text-zinc-500">→</span>
+                <span class="text-slate-400 group-hover:translate-x-0.5 transition">→</span>
               </div>
-              <p class="text-[11px] text-zinc-400 mt-1 line-clamp-1">K8s manifests, scaling, and observability</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">K8s manifests, Grafana, and Prometheus monitoring</p>
             </button>
           </div>
         </div>
 
       </div>
 
-      <!-- Bottom Chat Input Area -->
-      <div class="p-4 border-t border-surface-700 bg-surface-850 shrink-0">
+      <!-- Bottom Chat Input Bar -->
+      <div class="p-4 border-t border-slate-200 dark:border-surface-750 bg-white/90 dark:bg-surface-900/90 backdrop-blur shrink-0 transition-colors">
         <div class="max-w-4xl mx-auto">
           <form id="chatForm" onsubmit="handleChatSubmit(event)" class="relative">
-            <textarea id="questionInput" rows="2" placeholder="Ask a question about your documents... (Shift + Enter for new line)"
+            <textarea id="questionInput" rows="2" placeholder="Ask a question about your documents... (Press Enter to send, Shift + Enter for newline)"
               onkeydown="handleTextareaKeyDown(event)"
-              class="w-full bg-surface-900 border border-surface-700 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-xl px-4 py-3 pr-24 text-sm text-zinc-100 placeholder-zinc-500 resize-none outline-none scrollbar-thin transition"></textarea>
+              class="w-full bg-slate-50 dark:bg-surface-950 border border-slate-200 dark:border-surface-750 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-xl px-4 py-3 pr-28 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 resize-none outline-none transition"></textarea>
 
-            <div class="absolute right-3 bottom-3 flex items-center gap-2">
-              <button type="submit" id="sendBtn" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium text-xs flex items-center gap-1.5 transition shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
+            <div class="absolute right-3 bottom-3 flex items-center gap-1.5">
+              <button type="submit" id="sendBtn" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium text-xs flex items-center gap-1.5 transition shadow-lg shadow-brand-500/25 disabled:opacity-50 disabled:cursor-not-allowed">
                 <span>Send</span>
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
               </button>
             </div>
           </form>
 
-          <div class="flex items-center justify-between mt-2 px-1 text-[11px] text-zinc-500">
-            <span>Grounding mode active • Prompt injection defense enabled</span>
-            <span id="charCount">0 / 2000</span>
+          <div class="flex items-center justify-between mt-2 px-1 text-[11px] text-slate-500">
+            <span class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>Grounding mode active • Prompt-injection defenses enabled</span>
+            </span>
+            <span id="charCount" class="font-mono">0 / 2000</span>
           </div>
         </div>
       </div>
@@ -316,102 +423,167 @@
     </main>
   </div>
 
-  <!-- Settings Modal -->
-  <div id="settingsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-    <div class="bg-surface-800 border border-surface-700 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5 animate-in fade-in duration-200">
-      <div class="flex items-center justify-between border-b border-surface-700 pb-3">
-        <h3 class="text-base font-bold text-white flex items-center gap-2">
+  <!-- Document Details Modal -->
+  <div id="docModal" class="fixed inset-0 bg-black/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 animate-in fade-in duration-200">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-surface-750 pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center font-mono text-xs font-bold" id="docModalIcon">DOC</div>
+          <h3 class="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[340px]" id="docModalTitle">Document Details</h3>
+        </div>
+        <button onclick="toggleDocModal(false)" class="text-slate-400 hover:text-slate-900 dark:hover:text-white text-xl leading-none">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs" id="docModalBody">
+        <!-- Rendered by JS -->
+      </div>
+
+      <div class="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-surface-750">
+        <button id="docModalDeleteBtn" class="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium border border-rose-500/30 transition">
+          Delete Document
+        </button>
+        <button onclick="toggleDocModal(false)" class="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-surface-800 hover:bg-slate-200 dark:hover:bg-surface-750 text-slate-700 dark:text-slate-300 text-xs font-medium transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings & Tenant Configuration Modal -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5 animate-in fade-in duration-200">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-surface-750 pb-3">
+        <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <svg class="w-4 h-4 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
           <span>Platform Settings</span>
         </h3>
-        <button onclick="toggleSettingsModal(false)" class="text-zinc-400 hover:text-white text-lg leading-none">&times;</button>
+        <button onclick="toggleSettingsModal(false)" class="text-slate-400 hover:text-slate-900 dark:hover:text-white text-xl leading-none">&times;</button>
       </div>
 
       <div class="space-y-4 text-xs">
         <div>
-          <label class="block font-medium text-zinc-300 mb-1">API Key (<code class="text-brand-400">X-API-Key</code>)</label>
-          <input type="password" id="settingApiKey" placeholder="sk-..." class="w-full bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-brand-500">
-          <p class="text-[11px] text-zinc-500 mt-1">Leave blank if AUTH_ENABLED=false (default dev mode).</p>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">API Authentication Key (<code class="text-brand-600 dark:text-brand-400">X-API-Key</code>)</label>
+          <input type="password" id="settingApiKey" placeholder="sk-..." class="w-full bg-slate-50 dark:bg-surface-950 border border-slate-200 dark:border-surface-750 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 outline-none focus:border-brand-500 transition font-mono">
+          <p class="text-[11px] text-slate-500 mt-1">Leave empty if AUTH_ENABLED=false (default local development mode).</p>
         </div>
 
         <div>
-          <label class="block font-medium text-zinc-300 mb-1">Active Tenant</label>
-          <input type="text" id="settingTenant" placeholder="public" class="w-full bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-brand-500">
-          <p class="text-[11px] text-zinc-500 mt-1">When auth is enabled, tenant is determined by the API key.</p>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Active Tenant Scoping</label>
+          <input type="text" id="settingTenant" placeholder="public" class="w-full bg-slate-50 dark:bg-surface-950 border border-slate-200 dark:border-surface-750 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 outline-none focus:border-brand-500 transition font-mono">
+          <p class="text-[11px] text-slate-500 mt-1">When auth is enabled, each API key isolates documents to its mapped tenant.</p>
         </div>
 
-        <div class="pt-2 border-t border-surface-700/60">
-          <div class="font-medium text-zinc-300 mb-2">Connected Endpoints</div>
+        <div class="pt-2 border-t border-slate-200 dark:border-surface-750">
+          <div class="font-semibold text-slate-700 dark:text-slate-300 mb-2">Connected Platform Services</div>
           <div class="grid grid-cols-2 gap-2 text-[11px]">
-            <a href="/docs" target="_blank" class="p-2 bg-surface-900 rounded border border-surface-700 hover:border-brand-500 text-zinc-300 flex items-center justify-between">
-              <span>Swagger API Docs</span>
-              <span>↗</span>
+            <a href="/docs" target="_blank" class="p-2 bg-slate-50 dark:bg-surface-950 rounded-lg border border-slate-200 dark:border-surface-750 hover:border-brand-500 text-slate-700 dark:text-slate-300 flex items-center justify-between transition">
+              <span>Swagger UI</span>
+              <span class="text-slate-400">↗</span>
             </a>
-            <a href="/metrics" target="_blank" class="p-2 bg-surface-900 rounded border border-surface-700 hover:border-brand-500 text-zinc-300 flex items-center justify-between">
-              <span>Prometheus Metrics</span>
-              <span>↗</span>
+            <a href="/metrics" target="_blank" class="p-2 bg-slate-50 dark:bg-surface-950 rounded-lg border border-slate-200 dark:border-surface-750 hover:border-brand-500 text-slate-700 dark:text-slate-300 flex items-center justify-between transition">
+              <span>Prometheus</span>
+              <span class="text-slate-400">↗</span>
             </a>
-            <a href="http://localhost:3000" target="_blank" class="p-2 bg-surface-900 rounded border border-surface-700 hover:border-brand-500 text-zinc-300 flex items-center justify-between">
+            <a href="http://localhost:3000" target="_blank" class="p-2 bg-slate-50 dark:bg-surface-950 rounded-lg border border-slate-200 dark:border-surface-750 hover:border-brand-500 text-slate-700 dark:text-slate-300 flex items-center justify-between transition">
               <span>Grafana Dashboard</span>
-              <span>↗</span>
+              <span class="text-slate-400">↗</span>
             </a>
-            <a href="http://localhost:6333/dashboard" target="_blank" class="p-2 bg-surface-900 rounded border border-surface-700 hover:border-brand-500 text-zinc-300 flex items-center justify-between">
+            <a href="http://localhost:6333/dashboard" target="_blank" class="p-2 bg-slate-50 dark:bg-surface-950 rounded-lg border border-slate-200 dark:border-surface-750 hover:border-brand-500 text-slate-700 dark:text-slate-300 flex items-center justify-between transition">
               <span>Qdrant Web UI</span>
-              <span>↗</span>
+              <span class="text-slate-400">↗</span>
             </a>
           </div>
         </div>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="toggleSettingsModal(false)" class="px-4 py-2 rounded-lg bg-surface-700 hover:bg-surface-600 text-zinc-300 text-xs font-medium transition">
-          Close
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-surface-750">
+        <button onclick="toggleSettingsModal(false)" class="px-4 py-2 rounded-lg bg-slate-100 dark:bg-surface-800 hover:bg-slate-200 dark:hover:bg-surface-750 text-slate-700 dark:text-slate-300 text-xs font-medium transition">
+          Cancel
         </button>
-        <button onclick="saveSettings()" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium transition">
+        <button onclick="saveSettings()" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium transition shadow-md shadow-brand-500/25">
           Save Settings
         </button>
       </div>
     </div>
   </div>
 
-  <!-- JavaScript Client Application -->
+  <!-- Client Application Logic -->
   <script>
-    // State management
     const state = {
       documents: [],
+      filteredDocuments: [],
       selectedDocumentIds: new Set(),
       retrievalMode: 'hybrid',
       topK: 5,
       streaming: true,
       apiKey: localStorage.getItem('rag_api_key') || '',
       tenant: localStorage.getItem('rag_tenant') || 'public',
+      theme: localStorage.getItem('rag_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
       isGenerating: false,
+      chatHistory: [],
     };
 
-    // Initialize UI on page load
+    // Apply saved theme immediately
+    applyTheme(state.theme);
+
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('settingApiKey').value = state.apiKey;
       document.getElementById('settingTenant').value = state.tenant;
       updateActiveTenantBadge();
+      updateThemeIcons();
 
-      // Configure marked
       if (window.marked) {
         marked.setOptions({
           breaks: true,
-          gfm: true
+          gfm: true,
         });
       }
 
-      // Check health & fetch documents
       checkHealth();
       setInterval(checkHealth, 30000);
       loadDocuments();
 
-      // Setup char counter
-      const questionInput = document.getElementById('questionInput');
-      questionInput.addEventListener('input', () => {
-        document.getElementById('charCount').textContent = `${questionInput.value.length} / 2000`;
+      const input = document.getElementById('questionInput');
+      input.addEventListener('input', () => {
+        document.getElementById('charCount').textContent = `${input.value.length} / 2000`;
       });
     });
+
+    // Theme Management
+    function applyTheme(theme) {
+      state.theme = theme;
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      localStorage.setItem('rag_theme', theme);
+      updateThemeIcons();
+    }
+
+    function toggleTheme() {
+      const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
+      applyTheme(nextTheme);
+    }
+
+    function updateThemeIcons() {
+      const sun = document.getElementById('themeIconSun');
+      const moon = document.getElementById('themeIconMoon');
+      if (!sun || !moon) return;
+
+      if (state.theme === 'dark') {
+        sun.classList.remove('hidden');
+        moon.classList.add('hidden');
+      } else {
+        sun.classList.add('hidden');
+        moon.classList.remove('hidden');
+      }
+    }
+
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      sidebar.classList.toggle('-translate-x-full');
+    }
 
     function getHeaders(extra = {}) {
       const headers = { ...extra };
@@ -424,49 +596,63 @@
     function updateActiveTenantBadge() {
       const label = document.getElementById('activeTenantLabel');
       if (label) {
-        label.innerHTML = `Tenant: <strong class="text-zinc-200">${state.tenant}</strong>`;
+        label.innerHTML = `
+          <span class="w-1.5 h-1.5 rounded-full bg-brand-500"></span>
+          <span>Tenant: <strong class="text-slate-800 dark:text-slate-200">${escapeHtml(state.tenant)}</strong></span>
+        `;
       }
     }
 
-    // Health check
-    async function checkHealth() {
+    async function checkHealth(manual = false) {
+      const dot = document.getElementById('healthDot');
+      const pulse = document.getElementById('healthPulse');
+      const text = document.getElementById('healthText');
+
       try {
         const res = await fetch('/health', { headers: getHeaders() });
         const data = await res.json();
         const isHealthy = res.ok && data.status === 'ok';
 
-        const dot = document.getElementById('healthDot');
-        const pulse = document.getElementById('healthPulse');
-        const text = document.getElementById('healthText');
-
         if (isHealthy) {
           dot.className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
           pulse.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
-          text.textContent = "System Healthy";
+          text.textContent = "Healthy";
         } else {
           dot.className = "relative inline-flex rounded-full h-2 w-2 bg-amber-500";
           pulse.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75";
           text.textContent = "Degraded";
         }
+        if (manual) {
+          text.textContent = isHealthy ? "Refreshed: OK" : "Refreshed: Degraded";
+          setTimeout(() => { text.textContent = isHealthy ? "Healthy" : "Degraded"; }, 2000);
+        }
       } catch (err) {
-        const dot = document.getElementById('healthDot');
-        const text = document.getElementById('healthText');
         dot.className = "relative inline-flex rounded-full h-2 w-2 bg-rose-500";
+        pulse.className = "hidden";
         text.textContent = "Offline";
       }
     }
 
-    // Load Documents
+    // Document Management
     async function loadDocuments() {
       try {
         const res = await fetch('/documents', { headers: getHeaders() });
         if (!res.ok) throw new Error('Failed to fetch documents');
-        const docs = await res.json();
-        state.documents = docs;
-        renderDocumentsList();
+        state.documents = await res.json();
+        filterDocumentsList();
       } catch (err) {
-        console.error('Error loading documents:', err);
+        console.error('Error fetching documents:', err);
       }
+    }
+
+    function filterDocumentsList() {
+      const query = (document.getElementById('docSearchInput')?.value || '').toLowerCase().trim();
+      if (!query) {
+        state.filteredDocuments = [...state.documents];
+      } else {
+        state.filteredDocuments = state.documents.filter(d => d.name.toLowerCase().includes(query));
+      }
+      renderDocumentsList();
     }
 
     function renderDocumentsList() {
@@ -474,49 +660,58 @@
       const badge = document.getElementById('docCountBadge');
       badge.textContent = state.documents.length;
 
-      if (state.documents.length === 0) {
+      if (state.filteredDocuments.length === 0) {
         listEl.innerHTML = `
-          <div class="text-center py-10 text-xs text-zinc-500">
-            <svg class="w-8 h-8 mx-auto mb-2 text-zinc-600 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            No documents uploaded yet.<br>Drag and drop files above to start.
+          <div class="text-center py-10 text-xs text-slate-400">
+            <svg class="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            ${state.documents.length === 0 ? 'No documents uploaded yet.<br>Drop documents above to build your index.' : 'No matching documents found.'}
           </div>`;
         return;
       }
 
-      listEl.innerHTML = state.documents.map(doc => {
+      listEl.innerHTML = state.filteredDocuments.map(doc => {
         const isSelected = state.selectedDocumentIds.has(doc.id);
         const sizeKb = (doc.size_bytes / 1024).toFixed(1);
+        const ext = doc.name.split('.').pop().toUpperCase();
         
+        let badgeColor = 'bg-slate-100 dark:bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-500/20';
+        if (ext === 'PDF') badgeColor = 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20';
+        if (ext === 'MD') badgeColor = 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20';
+        if (ext === 'TXT') badgeColor = 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20';
+
         let statusBadge = '';
         if (doc.status === 'indexed') {
-          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">indexed (${doc.num_chunks} chunks)</span>`;
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">indexed (${doc.num_chunks} chunks)</span>`;
         } else if (doc.status === 'uploaded') {
-          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">queued</span>`;
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">queued</span>`;
         } else {
-          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">failed</span>`;
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">failed</span>`;
         }
 
         return `
-          <div class="group p-2.5 rounded-xl border ${isSelected ? 'border-brand-500/80 bg-brand-500/5' : 'border-surface-700 bg-surface-900/40 hover:bg-surface-800'} transition flex items-start gap-2.5">
+          <div class="group p-2.5 rounded-xl border ${isSelected ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-500/5 shadow-sm' : 'border-slate-200 dark:border-surface-750 bg-white dark:bg-surface-950/60 hover:bg-slate-50 dark:hover:bg-surface-850 hover:border-slate-300 dark:hover:border-surface-700'} transition flex items-start gap-2.5">
             <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleDocumentSelection('${doc.id}')"
-              class="mt-1 rounded border-surface-600 bg-surface-800 text-brand-500 focus:ring-0 cursor-pointer">
-            <div class="flex-1 min-w-0">
+              class="mt-1 rounded border-slate-300 dark:border-surface-700 bg-white dark:bg-surface-800 text-brand-600 focus:ring-0 cursor-pointer">
+            
+            <div class="flex-1 min-w-0 cursor-pointer" onclick="openDocModal('${doc.id}')">
               <div class="flex items-center justify-between gap-1">
-                <span class="text-xs font-semibold text-zinc-200 truncate" title="${doc.name}">${doc.name}</span>
-                <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                  ${doc.status !== 'indexed' ? `
-                    <button onclick="reindexDocument('${doc.id}')" title="Index Now" class="p-1 hover:text-brand-400 text-zinc-400">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                    </button>` : ''}
-                  <button onclick="deleteDocument('${doc.id}', '${doc.name}')" title="Delete document" class="p-1 hover:text-rose-400 text-zinc-400">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                  </button>
-                </div>
+                <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-white truncate" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</span>
+                <span class="text-[9px] font-bold px-1.5 py-0.2 rounded border ${badgeColor}">${ext}</span>
               </div>
               <div class="flex items-center gap-2 mt-1.5 flex-wrap">
                 ${statusBadge}
-                <span class="text-[10px] text-zinc-500 font-mono">${sizeKb} KB</span>
+                <span class="text-[10px] text-slate-500 font-mono">${sizeKb} KB</span>
               </div>
+            </div>
+
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition pt-0.5">
+              ${doc.status !== 'indexed' ? `
+                <button onclick="reindexDocument('${doc.id}')" title="Reindex Document" class="p-1 hover:text-brand-600 dark:hover:text-brand-400 text-slate-400 hover:bg-slate-100 dark:hover:bg-surface-800 rounded">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>` : ''}
+              <button onclick="deleteDocument('${doc.id}', '${escapeHtml(doc.name)}')" title="Delete Document" class="p-1 hover:text-rose-600 dark:hover:text-rose-400 text-slate-400 hover:bg-slate-100 dark:hover:bg-surface-800 rounded">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
             </div>
           </div>
         `;
@@ -534,6 +729,11 @@
       renderDocumentsList();
     }
 
+    function selectAllDocuments() {
+      state.selectedDocumentIds = new Set(state.documents.map(d => d.id));
+      renderDocumentsList();
+    }
+
     function clearDocumentSelection() {
       state.selectedDocumentIds.clear();
       renderDocumentsList();
@@ -541,73 +741,109 @@
 
     function updateSelectionScope() {
       const text = document.getElementById('selectionScopeText');
-      const btn = document.getElementById('clearSelectionBtn');
       const count = state.selectedDocumentIds.size;
+      const total = state.documents.length;
 
-      if (count === 0) {
-        text.textContent = "Searching across all indexed documents";
-        btn.classList.add('hidden');
+      if (count === 0 || count === total) {
+        text.textContent = "All documents included";
       } else {
-        text.textContent = `Filtered to ${count} selected document${count > 1 ? 's' : ''}`;
-        btn.classList.remove('hidden');
+        text.textContent = `Filtered to ${count} of ${total} documents`;
       }
     }
 
-    // File Upload handling
+    // Modal Document Inspection
+    function openDocModal(docId) {
+      const doc = state.documents.find(d => d.id === docId);
+      if (!doc) return;
+
+      document.getElementById('docModalTitle').textContent = doc.name;
+      const ext = doc.name.split('.').pop().toUpperCase();
+      document.getElementById('docModalIcon').textContent = ext;
+
+      const body = document.getElementById('docModalBody');
+      body.innerHTML = `
+        <div class="grid grid-cols-2 gap-2 p-3 bg-slate-50 dark:bg-surface-950 rounded-lg border border-slate-200 dark:border-surface-750">
+          <div><span class="text-slate-500">Document ID:</span> <div class="font-mono text-slate-800 dark:text-slate-300 truncate">${doc.id}</div></div>
+          <div><span class="text-slate-500">Tenant:</span> <div class="font-mono text-slate-800 dark:text-slate-300">${escapeHtml(doc.tenant_id)}</div></div>
+          <div><span class="text-slate-500">Content Type:</span> <div class="text-slate-800 dark:text-slate-300">${escapeHtml(doc.content_type)}</div></div>
+          <div><span class="text-slate-500">Size:</span> <div class="text-slate-800 dark:text-slate-300">${(doc.size_bytes / 1024).toFixed(1)} KB</div></div>
+          <div><span class="text-slate-500">Status:</span> <div class="font-medium text-emerald-600 dark:text-emerald-400 capitalize">${doc.status}</div></div>
+          <div><span class="text-slate-500">Indexed Chunks:</span> <div class="font-semibold text-slate-800 dark:text-slate-200">${doc.num_chunks}</div></div>
+        </div>
+        ${doc.error ? `<div class="p-2.5 rounded bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-300 font-mono text-[11px]">${escapeHtml(doc.error)}</div>` : ''}
+      `;
+
+      const deleteBtn = document.getElementById('docModalDeleteBtn');
+      deleteBtn.onclick = () => {
+        toggleDocModal(false);
+        deleteDocument(doc.id, doc.name);
+      };
+
+      toggleDocModal(true);
+    }
+
+    function toggleDocModal(show) {
+      const modal = document.getElementById('docModal');
+      if (show) modal.classList.remove('hidden');
+      else modal.classList.add('hidden');
+    }
+
+    // Upload & Ingestion
     function handleDragOver(e) {
       e.preventDefault();
-      document.getElementById('dropzone').classList.add('border-brand-500', 'bg-brand-500/10');
+      document.getElementById('dropzone').classList.add('border-brand-500', 'bg-brand-50/60', 'dark:bg-brand-500/10');
     }
 
     function handleDragLeave(e) {
       e.preventDefault();
-      document.getElementById('dropzone').classList.remove('border-brand-500', 'bg-brand-500/10');
+      document.getElementById('dropzone').classList.remove('border-brand-500', 'bg-brand-50/60', 'dark:bg-brand-500/10');
     }
 
     function handleDrop(e) {
       e.preventDefault();
-      document.getElementById('dropzone').classList.remove('border-brand-500', 'bg-brand-500/10');
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        uploadFile(e.dataTransfer.files[0]);
+      document.getElementById('dropzone').classList.remove('border-brand-500', 'bg-brand-50/60', 'dark:bg-brand-500/10');
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        uploadFiles(Array.from(e.dataTransfer.files));
       }
     }
 
     function handleFileSelect(e) {
-      if (e.target.files && e.target.files[0]) {
-        uploadFile(e.target.files[0]);
+      if (e.target.files && e.target.files.length) {
+        uploadFiles(Array.from(e.target.files));
       }
     }
 
-    async function uploadFile(file) {
+    async function uploadFiles(files) {
       const autoIndex = document.getElementById('autoIndexCheckbox').checked;
       const statusText = document.getElementById('uploadStatusText');
-      statusText.textContent = "Uploading...";
 
-      const formData = new FormData();
-      formData.append('file', file);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        statusText.textContent = `Uploading (${i + 1}/${files.length})...`;
 
-      try {
-        const url = `/documents/upload?auto_index=${autoIndex ? 'true' : 'false'}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: getHeaders(),
-          body: formData,
-        });
+        const formData = new FormData();
+        formData.append('file', file);
 
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || 'Upload failed');
+        try {
+          const url = `/documents/upload?auto_index=${autoIndex ? 'true' : 'false'}`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.detail || 'Upload failed');
+          }
+        } catch (err) {
+          alert(`Error uploading ${file.name}: ${err.message}`);
         }
-
-        const doc = await res.json();
-        statusText.textContent = doc.duplicate ? "Duplicate detected!" : (autoIndex ? "Indexed!" : "Uploaded!");
-        setTimeout(() => { statusText.textContent = ""; }, 3000);
-        await loadDocuments();
-      } catch (err) {
-        statusText.textContent = "Upload failed!";
-        alert("Upload error: " + err.message);
-        setTimeout(() => { statusText.textContent = ""; }, 4000);
       }
+
+      statusText.textContent = "Done!";
+      setTimeout(() => { statusText.textContent = ""; }, 3000);
+      await loadDocuments();
     }
 
     async function reindexDocument(id) {
@@ -646,10 +882,10 @@
 
       if (mode === 'hybrid') {
         btnHybrid.className = "px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm";
-        btnSemantic.className = "px-2.5 py-1 rounded-md font-medium text-xs text-zinc-400 hover:text-zinc-200 transition";
+        btnSemantic.className = "px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition";
       } else {
         btnSemantic.className = "px-2.5 py-1 rounded-md font-medium text-xs bg-brand-600 text-white transition shadow-sm";
-        btnHybrid.className = "px-2.5 py-1 rounded-md font-medium text-xs text-zinc-400 hover:text-zinc-200 transition";
+        btnHybrid.className = "px-2.5 py-1 rounded-md font-medium text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition";
       }
     }
 
@@ -673,28 +909,33 @@
     }
 
     function clearChatHistory() {
+      state.chatHistory = [];
       const container = document.getElementById('chatContainer');
       container.innerHTML = '';
-      container.appendChild(document.getElementById('welcomeHero') || createWelcomeHero());
-      const hero = document.getElementById('welcomeHero');
-      if (hero) hero.classList.remove('hidden');
+      const hero = createWelcomeHero();
+      container.appendChild(hero);
     }
 
     function createWelcomeHero() {
       const div = document.createElement('div');
       div.id = 'welcomeHero';
-      div.className = 'max-w-2xl mx-auto py-12 text-center space-y-6';
+      div.className = 'max-w-2xl mx-auto py-10 sm:py-16 text-center space-y-6';
       div.innerHTML = `
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center mx-auto shadow-2xl shadow-brand-500/30 text-white text-3xl">⚡</div>
+        <div class="relative inline-block">
+          <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center mx-auto shadow-2xl shadow-brand-500/30 text-white text-3xl">⚡</div>
+          <div class="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-1 border-2 border-white dark:border-surface-950">
+            <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+          </div>
+        </div>
         <div class="space-y-2">
-          <h1 class="text-2xl font-bold tracking-tight text-white">Grounded Document Q&A</h1>
-          <p class="text-sm text-zinc-400 max-w-lg mx-auto">Ask questions about your uploaded documents with precise page-number citations.</p>
+          <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Grounded Document Q&A</h1>
+          <p class="text-sm text-slate-600 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">Ask questions about your ingested documents with verifiable citations.</p>
         </div>
       `;
       return div;
     }
 
-    // Chat execution
+    // Chat Execution
     async function handleChatSubmit(e) {
       if (e) e.preventDefault();
       if (state.isGenerating) return;
@@ -710,6 +951,7 @@
       if (hero) hero.classList.add('hidden');
 
       appendUserMessage(question);
+      state.chatHistory.push({ role: 'user', content: question });
 
       const streamChecked = document.getElementById('streamingToggle').checked;
       state.isGenerating = true;
@@ -738,15 +980,11 @@
       container.scrollTop = container.scrollHeight;
     }
 
-    function escapeHtml(str) {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
     async function executeStandardQuery(question) {
       const container = document.getElementById('chatContainer');
       const assistantDiv = document.createElement('div');
       assistantDiv.className = 'flex justify-start';
-      
+
       const docIds = state.selectedDocumentIds.size > 0 ? Array.from(state.selectedDocumentIds) : null;
       const payload = {
         question: question,
@@ -757,9 +995,10 @@
       };
 
       assistantDiv.innerHTML = `
-        <div class="max-w-2xl bg-surface-800 border border-surface-700 rounded-2xl rounded-tl-sm p-4 text-sm shadow-lg space-y-3">
-          <div class="flex items-center gap-2 text-zinc-400 text-xs">
-            <span class="inline-block animate-spin">⚙</span> Searching & synthesizing grounded answer...
+        <div class="max-w-3xl w-full bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl rounded-tl-sm p-5 text-sm shadow-sm dark:shadow-xl space-y-3">
+          <div class="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs">
+            <span class="inline-block animate-spin text-brand-600 dark:text-brand-400">⚙</span>
+            <span>Retrieving chunks & synthesizing answer...</span>
           </div>
         </div>
       `;
@@ -779,10 +1018,11 @@
         }
 
         const data = await res.json();
+        state.chatHistory.push({ role: 'assistant', data: data });
         renderCompleteAnswer(assistantDiv, data);
       } catch (err) {
         assistantDiv.innerHTML = `
-          <div class="max-w-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-2xl p-4 text-sm">
+          <div class="max-w-3xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-2xl p-4 text-sm">
             <strong>Query Error:</strong> ${escapeHtml(err.message)}
           </div>
         `;
@@ -805,13 +1045,12 @@
       };
 
       assistantDiv.innerHTML = `
-        <div class="max-w-3xl w-full bg-surface-850 border border-surface-700 rounded-2xl rounded-tl-sm p-4 text-sm shadow-xl space-y-3">
-          <div class="flex items-center gap-2 text-zinc-400 text-xs" id="streamStatus">
-            <span class="inline-block animate-pulse text-brand-400">⚡</span>
+        <div class="max-w-3xl w-full bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl rounded-tl-sm p-5 text-sm shadow-sm dark:shadow-xl space-y-3">
+          <div class="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs" id="streamStatus">
+            <span class="inline-block animate-pulse text-brand-600 dark:text-brand-400 font-bold">⚡</span>
             <span>Retrieving context...</span>
           </div>
-          <div class="prose text-zinc-200 streaming-cursor" id="streamBody"></div>
-          <div id="streamMeta" class="pt-3 border-t border-surface-700/60 hidden"></div>
+          <div class="prose streaming-cursor" id="streamBody"></div>
         </div>
       `;
       container.appendChild(assistantDiv);
@@ -819,7 +1058,6 @@
 
       const bodyEl = assistantDiv.querySelector('#streamBody');
       const statusEl = assistantDiv.querySelector('#streamStatus');
-      const metaEl = assistantDiv.querySelector('#streamMeta');
 
       let accumulatedText = "";
       let finalData = null;
@@ -833,7 +1071,7 @@
 
         if (!response.ok) {
           const errData = await response.json();
-          throw new Error(errData.detail || 'Stream query failed');
+          throw new Error(errData.detail || 'Streaming failed');
         }
 
         const reader = response.body.getReader();
@@ -846,7 +1084,7 @@
 
           buffer += decoder.decode(value, { stream: true });
           const parts = buffer.split("\n\n");
-          buffer = parts.pop(); // keep remainder
+          buffer = parts.pop();
 
           for (const part of parts) {
             if (!part.trim()) continue;
@@ -862,10 +1100,10 @@
             const parsed = JSON.parse(eventData);
 
             if (eventType === "retrieval") {
-              statusEl.innerHTML = `<span class="text-brand-400 font-medium">Retrieved ${parsed.chunks_returned} chunks in ${parsed.latency_ms.toFixed(1)}ms (${parsed.mode})</span>`;
+              statusEl.innerHTML = `<span class="text-brand-600 dark:text-brand-400 font-medium">Retrieved ${parsed.chunks_returned} chunks in ${parsed.latency_ms.toFixed(1)}ms (${parsed.mode})</span>`;
             } else if (eventType === "delta") {
               accumulatedText += parsed.text;
-              bodyEl.innerHTML = window.marked ? marked.parse(accumulatedText) : escapeHtml(accumulatedText);
+              bodyEl.innerHTML = formatMarkdownWithCitations(accumulatedText);
               container.scrollTop = container.scrollHeight;
             } else if (eventType === "done") {
               finalData = parsed;
@@ -879,17 +1117,27 @@
         statusEl.classList.add('hidden');
 
         if (finalData) {
+          state.chatHistory.push({ role: 'assistant', data: finalData });
           renderCompleteAnswer(assistantDiv, finalData);
         }
       } catch (err) {
         bodyEl.classList.remove('streaming-cursor');
-        statusEl.innerHTML = `<span class="text-rose-400">Error: ${escapeHtml(err.message)}</span>`;
+        statusEl.innerHTML = `<span class="text-rose-600 dark:text-rose-400">Error: ${escapeHtml(err.message)}</span>`;
       }
       container.scrollTop = container.scrollHeight;
     }
 
+    function formatMarkdownWithCitations(rawText) {
+      if (!window.marked) return escapeHtml(rawText);
+      let html = marked.parse(rawText);
+      html = html.replace(/\[(\d+)\]/g, (match, p1) => {
+        return `<a href="#source-card-${p1}" class="citation-ref" title="Jump to Source [${p1}]">[${p1}]</a>`;
+      });
+      return html;
+    }
+
     function renderCompleteAnswer(containerEl, data) {
-      const renderedAnswer = window.marked ? marked.parse(data.answer) : escapeHtml(data.answer);
+      const renderedAnswer = formatMarkdownWithCitations(data.answer);
       const isInsufficient = data.insufficient_context;
       const isCached = data.cached;
       
@@ -900,73 +1148,123 @@
       const totalTokens = data.usage ? data.usage.total_tokens : 0;
       const mode = data.retrieval ? data.retrieval.mode : 'hybrid';
 
-      // Citations pill list
+      // Citations / Sources Cards
       const citationsHtml = citations.length > 0 ? `
-        <div class="mt-4 pt-3 border-t border-surface-700/60">
-          <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2 flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-            Cited Sources (${citations.length})
+        <div class="mt-4 pt-3.5 border-t border-slate-200 dark:border-surface-750">
+          <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center justify-between">
+            <span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+              <span>Cited Document Sources (${citations.length})</span>
+            </span>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            ${citations.map((c, i) => `
-              <div class="p-2.5 rounded-lg bg-surface-900 border border-surface-700 text-xs">
-                <div class="flex items-center justify-between text-zinc-200 font-medium">
-                  <span class="truncate max-w-[180px]">[${i+1}] ${escapeHtml(c.document_name)}</span>
-                  <span class="text-brand-400 font-mono text-[11px]">p.${c.page}</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            ${citations.map((c, i) => {
+              const matchedChunk = chunks.find(ch => ch.chunk_id === c.chunk_id) || {};
+              const snippet = matchedChunk.text ? escapeHtml(matchedChunk.text.slice(0, 180)) + '...' : '';
+              return `
+                <div id="source-card-${i+1}" class="p-3 rounded-xl bg-slate-50 dark:bg-surface-950 border border-slate-200 dark:border-surface-750 hover:border-brand-500/50 transition text-xs space-y-1.5">
+                  <div class="flex items-center justify-between text-slate-800 dark:text-slate-200 font-semibold">
+                    <span class="truncate max-w-[180px] flex items-center gap-1.5">
+                      <span class="px-1.5 py-0.2 rounded bg-brand-500/10 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 font-mono">[${i+1}]</span>
+                      <span class="truncate">${escapeHtml(c.document_name)}</span>
+                    </span>
+                    <span class="text-brand-600 dark:text-brand-400 font-mono text-[11px] bg-brand-50 dark:bg-brand-500/10 px-1.5 py-0.5 rounded border border-brand-200 dark:border-brand-500/20">p.${c.page}</span>
+                  </div>
+                  ${snippet ? `<p class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed italic bg-white dark:bg-surface-900/60 p-2 rounded border border-slate-200 dark:border-surface-800">${snippet}</p>` : ''}
+                  <div class="text-[10px] text-slate-500 flex justify-between items-center pt-0.5">
+                    <span>Similarity: <strong class="text-slate-700 dark:text-slate-300 font-mono">${(c.score * 100).toFixed(1)}%</strong></span>
+                    <span class="font-mono text-slate-400 dark:text-slate-600">chunk ${c.chunk_id.slice(0, 8)}</span>
+                  </div>
                 </div>
-                <div class="text-[10px] text-zinc-500 mt-1 flex justify-between">
-                  <span>Score: ${c.score.toFixed(3)}</span>
-                  <span class="font-mono">chunk ${c.chunk_id.slice(0, 8)}</span>
-                </div>
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         </div>
       ` : '';
 
-      // Insufficient warning
+      // Insufficient Context Alert
       const insufficientHtml = isInsufficient ? `
-        <div class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+        <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2.5">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-          <span><strong>Grounding Alert:</strong> The retrieved context was insufficient to answer parts of this query. Hallucinations were suppressed.</span>
+          <span><strong>Grounding Alert:</strong> The retrieved context was insufficient to answer all parts of this question. Hallucinations were suppressed by policy.</span>
         </div>
       ` : '';
 
       containerEl.innerHTML = `
-        <div class="max-w-3xl w-full bg-surface-850 border border-surface-700 rounded-2xl rounded-tl-sm p-5 text-sm shadow-xl space-y-3">
+        <div class="max-w-3xl w-full bg-white dark:bg-surface-900 border border-slate-200 dark:border-surface-750 rounded-2xl rounded-tl-sm p-5 text-sm shadow-sm dark:shadow-xl space-y-3.5">
           ${insufficientHtml}
-          <div class="prose text-zinc-100">${renderedAnswer}</div>
+          <div class="prose">${renderedAnswer}</div>
           ${citationsHtml}
           
-          <!-- Telemetry & Observability Footer -->
-          <div class="mt-3 pt-3 border-t border-surface-700/50 flex items-center justify-between text-[11px] text-zinc-400 flex-wrap gap-2">
-            <div class="flex items-center gap-3">
-              <span class="flex items-center gap-1 font-mono text-zinc-300" title="Total response latency">
+          <!-- Observability & Telemetry Footer -->
+          <div class="mt-3.5 pt-3 border-t border-slate-200 dark:border-surface-750 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 flex-wrap gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="flex items-center gap-1 font-mono text-slate-700 dark:text-slate-300 font-medium" title="Response Latency">
                 ⚡ ${latency}ms
               </span>
-              <span class="px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-zinc-300 font-medium">
+              <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-surface-800 border border-slate-200 dark:border-surface-700 text-slate-700 dark:text-slate-300 font-medium">
                 ${mode}
               </span>
-              ${isCached ? '<span class="px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/40">Cache Hit</span>' : ''}
+              ${isCached ? '<span class="px-2 py-0.5 rounded bg-brand-50 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-500/40 font-semibold">Cached ⚡</span>' : ''}
             </div>
 
-            <div class="flex items-center gap-3 text-zinc-500">
-              <span title="Total tokens consumed">${totalTokens} tokens</span>
-              <span class="text-zinc-400 font-mono" title="Estimated cost">${cost}</span>
+            <div class="flex items-center gap-3 text-slate-500">
+              <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(data.answer)}'), this)" class="hover:text-slate-900 dark:hover:text-slate-200 transition flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span>Copy</span>
+              </button>
+              <span title="Total tokens">${totalTokens} tokens</span>
+              <span class="text-slate-700 dark:text-slate-400 font-mono" title="Estimated query cost">${cost}</span>
             </div>
           </div>
         </div>
       `;
     }
 
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.innerHTML;
+        btn.innerHTML = `<span class="text-emerald-600 dark:text-emerald-400 font-medium">Copied!</span>`;
+        setTimeout(() => { btn.innerHTML = original; }, 2000);
+      });
+    }
+
+    function exportChatHistory() {
+      if (state.chatHistory.length === 0) {
+        alert("No messages to export yet.");
+        return;
+      }
+
+      let markdown = "# Production RAG Platform - Chat Export\n\n";
+      state.chatHistory.forEach(item => {
+        if (item.role === 'user') {
+          markdown += `### User:\n${item.content}\n\n`;
+        } else if (item.data) {
+          markdown += `### Assistant:\n${item.data.answer}\n\n`;
+          if (item.data.citations && item.data.citations.length > 0) {
+            markdown += `**Citations:**\n`;
+            item.data.citations.forEach((c, i) => {
+              markdown += `- [${i+1}] ${c.document_name} (Page ${c.page}, score: ${c.score.toFixed(3)})\n`;
+            });
+            markdown += `\n`;
+          }
+        }
+      });
+
+      const blob = new Blob([markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rag-conversation-${new Date().toISOString().slice(0, 10)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
     // Settings Modal
     function toggleSettingsModal(show) {
       const modal = document.getElementById('settingsModal');
-      if (show) {
-        modal.classList.remove('hidden');
-      } else {
-        modal.classList.add('hidden');
-      }
+      if (show) modal.classList.remove('hidden');
+      else modal.classList.add('hidden');
     }
 
     function saveSettings() {
@@ -983,6 +1281,11 @@
       toggleSettingsModal(false);
       checkHealth();
       loadDocuments();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
   </script>
 </body>
