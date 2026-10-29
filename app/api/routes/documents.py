@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 
 from app.api.auth import Tenant
 from app.api.dependencies import ServiceContainer, get_container
-from app.api.schemas import DocumentOut
+from app.api.schemas import DocumentChunkOut, DocumentOut
 from app.core.logging import get_logger
 from app.ingestion.loaders import (
     SUPPORTED_EXTENSIONS,
@@ -207,3 +207,31 @@ def delete_document(document_id: str, container: _Container, tenant: Tenant) -> 
         container.pipeline.delete_document(document_id, tenant_id=tenant)
     except DocumentNotFoundError as exc:
         raise _not_found(document_id) from exc
+@router.get("/{document_id}/chunks", response_model=list[DocumentChunkOut])
+def get_document_chunks(
+    document_id: str, container: _Container, tenant: Tenant
+) -> list[DocumentChunkOut]:
+    """Retrieve all indexed chunks for a document, ordered by page and index."""
+    document = container.repository.get(document_id, tenant)
+    if document is None:
+        raise _not_found(document_id)
+
+    chunks: list[DocumentChunkOut] = []
+    for record in container.pipeline.vector_store.iter_chunks(document_id):
+        meta = record.metadata
+        if meta.get("tenant_id") == tenant:
+            text = meta.get("text", "")
+            chunks.append(
+                DocumentChunkOut(
+                    chunk_id=meta.get("chunk_id", record.id),
+                    document_id=document_id,
+                    chunk_index=meta.get("chunk_index", 0),
+                    page=meta.get("page", 1),
+                    text=text,
+                    char_count=len(text),
+                    tenant_id=tenant,
+                )
+            )
+    chunks.sort(key=lambda c: (c.page, c.chunk_index))
+    return chunks
+

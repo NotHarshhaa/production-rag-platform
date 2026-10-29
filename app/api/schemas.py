@@ -20,6 +20,21 @@ class DocumentOut(BaseModel):
     duplicate: bool = False
 
 
+class DocumentChunkOut(BaseModel):
+    chunk_id: str
+    document_id: str
+    chunk_index: int
+    page: int
+    text: str
+    char_count: int
+    tenant_id: str
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=10000)
+
+
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=50)
@@ -28,6 +43,8 @@ class QueryRequest(BaseModel):
     document_ids: list[str] | None = None
     # "hybrid" combines BM25 + vectors; "semantic" uses vectors only.
     mode: Literal["hybrid", "semantic"] | None = None
+    # Optional multi-turn conversation context for follow-up questions.
+    conversation_history: list[ChatMessage] | None = Field(default=None, max_length=20)
 
 
 class CitationOut(BaseModel):

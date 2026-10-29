@@ -33,12 +33,18 @@ def _build_filter(tenant: str, document_ids: list[str] | None) -> dict:
 
 @router.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest, container: _Container, tenant: Tenant) -> QueryResponse:
+    history_dicts = (
+        [m.model_dump() for m in request.conversation_history]
+        if request.conversation_history
+        else None
+    )
     try:
         result = container.answer_service.answer(
             question=request.question,
             top_k=request.top_k,
             metadata_filter=_build_filter(tenant, request.document_ids),
             mode=request.mode,
+            conversation_history=history_dicts,
         )
     except LLMError as exc:
         raise HTTPException(
@@ -95,6 +101,11 @@ def query_stream(
     request: QueryRequest, container: _Container, tenant: Tenant
 ) -> StreamingResponse:
     """Server-sent events: retrieval, delta*, then done (or error)."""
+    history_dicts = (
+        [m.model_dump() for m in request.conversation_history]
+        if request.conversation_history
+        else None
+    )
 
     def event_stream():
         try:
@@ -103,6 +114,7 @@ def query_stream(
                 top_k=request.top_k,
                 metadata_filter=_build_filter(tenant, request.document_ids),
                 mode=request.mode,
+                conversation_history=history_dicts,
             ):
                 yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
         except LLMError as exc:
