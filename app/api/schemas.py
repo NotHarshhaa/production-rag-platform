@@ -94,6 +94,7 @@ class QueryResponse(BaseModel):
     retrieval: RetrievalInfo
     usage: UsageInfo
     insufficient_context: bool
+    groundedness_score: float = 1.0
     prompt_version: str
     latency_ms: float
     cached: bool = False
